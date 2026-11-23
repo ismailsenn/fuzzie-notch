@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fuzzie: a tiny notch for Windows</title>
+<meta name="description" content="Fuzzie is a small, fast desktop notch for Windows: now playing with synced lyrics, a shelf, clipboard history, notifications, friends and a fox drawn in code.">
+<meta property="og:title" content="Fuzzie: a tiny notch for Windows">
+<meta property="og:description" content="Music, lyrics, shelf, clipboard, notifications, friends and a fox. A few MB, near-zero CPU.">
+<meta property="og:image" content="img/music.png">
+<link rel="icon" href="favicon.ico">
+<style>
+  :root {
+    --bg: #0c0a0b;
+    --panel: #161214;
+    --line: #2a2326;
+    --fg: #f6efe9;
+    --dim: #b3a69d;
+    --accent: #ff8a3d;
+    --accent-2: #ffb27a;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 500px at 50% -120px, rgba(255, 138, 61, 0.22), transparent 70%),
+      var(--bg);
+    color: var(--fg);
+    font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  a { color: var(--accent-2); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; color: var(--fg); text-decoration: none; }
+  .brand img { width: 36px; height: 36px; }
+  nav a { color: var(--dim); text-decoration: none; margin-left: 22px; font-size: 15px; }
+  nav a:hover { color: var(--fg); }
+
+  .hero { text-align: center; padding: 56px 0 24px; }
+  .hero .icon { width: 128px; height: 128px; filter: drop-shadow(0 12px 30px rgba(255, 138, 61, 0.35)); }
+  h1 { font-size: clamp(38px, 6vw, 60px); line-height: 1.08; margin: 18px 0 14px; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .lead { color: var(--dim); font-size: 19px; max-width: 620px; margin: 0 auto 30px; }
+  .cta { display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: #1a0d05; font-weight: 700; font-size: 18px; padding: 15px 28px; border-radius: 14px; text-decoration: none; box-shadow: 0 10px 30px rgba(255, 138, 61, 0.35); transition: transform .15s, box-shadow .15s; }
+  .cta:hover { transform: translateY(-2px); box-shadow: 0 14px 36px rgba(255, 138, 61, 0.45); }
+  .cta svg { width: 20px; height: 20px; }
+  .meta { color: var(--dim); font-size: 14px; margin-top: 14px; }
+  .meta a { color: var(--dim); }
+
+  .showcase { margin: 46px auto 10px; max-width: 640px; position: relative; }
+  .showcase img.notch { width: 100%; display: block; filter: drop-shadow(0 30px 60px rgba(0, 0, 0, 0.6)); }
+  .showcase img.desk { position: absolute; right: -86px; bottom: -14px; width: 92px; }
+
+  section { padding: 64px 0 8px; }
+  h2 { font-size: 30px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .sub { color: var(--dim); margin: 0 0 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 20px; }
+  .card h3 { margin: 0 0 4px; font-size: 19px; }
+  .card p { margin: 0 0 16px; color: var(--dim); font-size: 15px; }
+  .card img { width: 100%; display: block; border-radius: 10px; }
+  .card .small { display: flex; justify-content: center; align-items: center; min-height: 120px; gap: 26px; }
+  .card .small img { width: auto; max-width: 100%; }
+  .feats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 28px; }
+  .feat { border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+  .feat b { display: block; margin-bottom: 2px; }
+  .feat span { color: var(--dim); font-size: 14.5px; }
+
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  .steps li { counter-increment: s; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px 16px 62px; position: relative; color: var(--dim); }
+  .steps li b { color: var(--fg); }
+  .steps li::before { content: counter(s); position: absolute; left: 18px; top: 14px; width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 138, 61, 0.18); color: var(--accent); font-weight: 700; display: grid; place-items: center; }
+  footer { color: var(--dim); font-size: 14px; text-align: center; padding: 70px 0 40px; }
+  @media (max-width: 820px) { .showcase img.desk { display: none; } nav a:not(.gh) { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#"><img src="img/icon.png" alt="">Fuzzie</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a class="gh" href="https://github.com/ismailsenn/Fuzzie">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <img class="icon" src="img/icon.png" alt="Fuzzie, the fox">
+    <h1>A tiny notch<br>for <span>Windows</span></h1>
+    <p class="lead">Now playing with synced lyrics, a file shelf, clipboard history, notifications and friends, all in a small notch at the top of your screen. With a fox.</p>
+    <a class="cta" id="download" href="https://github.com/ismailsenn/Fuzzie/releases/latest/download/Fuzzie.exe">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+      Download for Windows
+    </a>
+    <div class="meta"><span id="ver">Latest version</span> · Windows 10 &amp; 11 · free and <a href="https://github.com/ismailsenn/Fuzzie">open source</a></div>
+
+    <div class="showcase">
+      <img class="notch" src="img/music.png" alt="The Fuzzie notch showing a song with synced lyrics">
+      <img class="desk" src="img/desk_left.png" alt="">
+    </div>
+  </div>
+
+  <section id="features">
+    <h2>Everything at a glance</h2>
+    <p class="sub">Hover the notch to open it. Move away and it tucks itself back in.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Music &amp; lyrics</h3>
+        <p>Whatever is playing (Spotify, browsers, any media app) with controls and lyrics that slide in line by line.</p>
+        <img src="img/music_wide.png" alt="Music page with album art and controls">
+      </div>
+      <div class="card">
+        <h3>Friends</h3>
+        <p>Add friends with a code like FUZ-A4G7B9. See who's online and what they play, poke them, or listen along.</p>
+        <img src="img/friends.png" alt="Friends page with online friends">
+      </div>
+      <div class="card">
+        <h3>Shelf &amp; clipboard</h3>
+        <p>Drop files on the notch to keep them handy, and get back anything you copied, text or images.</p>
+        <img src="img/shelf.png" alt="Shelf and clipboard page">
+      </div>
+      <div class="card">
+        <h3>Notifications &amp; HUDs</h3>
+        <p>Messages, volume, Caps Lock and audio device changes show up right in the notch.</p>
+        <div class="small"><img src="img/notice.png" alt="A notification in the notch"></div>
+        <div class="small" style="min-height:70px"><img src="img/closed.png" alt="The collapsed notch showing a lyric line"></div>
+      </div>
+    </div>
+
+    <div class="feats">
+      <div class="feat"><b>A fox drawn in code</b><span>Dozens of skins and accessories. Pick one, or let it surprise you.</span></div>
+      <div class="feat"><b>Desktop Fuzzie</b><span>Sits on your taskbar and taps a paw on every key press and click.</span></div>
+      <div class="feat"><b>Light</b><span>Written in Rust and Direct2D: a few MB of memory, near-zero CPU when idle.</span></div>
+      <div class="feat"><b>Always up to date</b><span>New versions install themselves within minutes. You can turn that off.</span></div>
+      <div class="feat"><b>Your data stays yours</b><span>No email or password. Delete everything, or uninstall, right from Settings.</span></div>
+      <div class="feat"><b>Yours to shape</b><span>Colours, size, position on any edge or corner, and every feature can be switched off.</span></div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <p class="sub">No installer: Fuzzie is a single file.</p>
+    <ol class="steps">
+      <li><b>Download <a href="https://github.com/ismailsenn/Fuzzie/releases/latest/download/Fuzzie.exe">Fuzzie.exe</a></b> and put it wherever you like, for example in a "Fuzzie" folder in Documents.</li>
+      <li><b>Run it.</b> Windows may say it protected your PC because the app is new: click <b>More info</b>, then <b>Run anyway</b>.</li>
+      <li><b>That's it.</b> Fuzzie starts with Windows and updates itself. Open Settings from the gear in the notch or the tray icon.</li>
+    </ol>
+  </section>
+
+  <footer>
+    Fuzzie is free and open source · <a href="https://github.com/ismailsenn/Fuzzie">Source on GitHub</a> · <a href="https://github.com/ismailsenn/Fuzzie/releases">All releases</a><br>
+    Song titles in the pictures are only examples; the lyrics shown are from a public-domain song.
+  </footer>
+</div>
+<script>
+  // Shows the latest version and its size next to the download button.
+  fetch("https://api.github.com/repos/ismailsenn/Fuzzie/releases/latest")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((rel) => {
+      if (!rel) return;
+      const exe = (rel.assets || []).find((a) => a.name === "Fuzzie.exe");
+      const size = exe ? " · " + (exe.size / 1048576).toFixed(1) + " MB" : "";
+      document.getElementById("ver").textContent = rel.tag_name + size;
+    })
+    .catch(() => {});
+</script>
+</body>
+</html>

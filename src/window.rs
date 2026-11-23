@@ -575,7 +575,21 @@ impl App {
         let args: Vec<String> = std::env::args().collect();
         let Some(dir) = args.iter().position(|a| a == "--snapshot").and_then(|i| args.get(i + 1)) else { return };
         let dir = std::path::PathBuf::from(dir);
+        // FUZZIE_DEMO=1: a made-up song instead of what is really playing.
+        let demo = std::env::var("FUZZIE_DEMO").is_ok();
         let save = |a: &mut App, name: &str| {
+            if demo {
+                // Lyrics shown are from a public-domain song (Robert Burns, 1788).
+                let m = if name.starts_with("music_wide") {
+                    media::MediaInfo::demo("Blinding Lights", "The Weeknd", 200_000)
+                } else {
+                    media::MediaInfo::demo("Auld Lang Syne", "Traditional", 214_000)
+                };
+                let lines = ["Should auld acquaintance be forgot,", "and never brought to mind?", "Should auld acquaintance be forgot,", "and auld lang syne?", "For auld lang syne, my dear,"];
+                let lines: Vec<(u64, String)> = lines.iter().enumerate().map(|(i, l)| (40_000 + i as u64 * 6_000, l.to_string())).collect();
+                a.lyrics.lock().unwrap().current = Some(lyrics::Lyrics { key: m.key(), lines: Arc::new(lines), synced: true });
+                *a.media.lock().unwrap() = m;
+            }
             a.redraw();
             let (w, h) = (a.renderer.width as u32, a.renderer.height as u32);
             if let Some(png) = crate::image::encode_png(w, h, a.renderer.pixels()) {

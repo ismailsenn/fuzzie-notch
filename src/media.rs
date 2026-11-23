@@ -47,7 +47,61 @@ pub struct MediaInfo {
     pub shuffle: Option<bool>,
 }
 
+/// A drawn cover for the demo song: a striped sun setting over a road.
+fn demo_art() -> Image {
+    let n = ART_SIZE as usize;
+    let mut px = vec![0u8; n * n * 4];
+    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    for y in 0..n {
+        for x in 0..n {
+            let (fx, fy) = (x as f32 / n as f32, y as f32 / n as f32);
+            // Sky: deep plum at the top to warm orange at the horizon.
+            let t = (fy / 0.66).min(1.0);
+            let mut c = [lerp(0.20, 1.00, t), lerp(0.08, 0.52, t), lerp(0.30, 0.22, t)];
+            // The sun, cut by stripes near its bottom.
+            let (dx, dy) = (fx - 0.5, fy - 0.56);
+            let stripe = fy > 0.5 && ((fy - 0.5) * 40.0) as i32 % 2 == 1;
+            if dx * dx + dy * dy < 0.07 && fy < 0.66 && !stripe {
+                c = [1.0, lerp(0.86, 0.62, (fy - 0.3) / 0.36), 0.35];
+            }
+            // Ground and a road narrowing to the horizon.
+            if fy >= 0.66 {
+                let k = (fy - 0.66) / 0.34;
+                c = [0.16, 0.10, 0.20];
+                if dx.abs() < 0.03 + 0.42 * k {
+                    c = [0.28, 0.22, 0.32];
+                    if dx.abs() < 0.012 + 0.02 * k && ((fy * 30.0) as i32) % 2 == 0 {
+                        c = [1.0, 0.82, 0.45];
+                    }
+                }
+            }
+            let i = (y * n + x) * 4;
+            px[i] = (c[2] * 255.0) as u8;
+            px[i + 1] = (c[1] * 255.0) as u8;
+            px[i + 2] = (c[0] * 255.0) as u8;
+            px[i + 3] = 255;
+        }
+    }
+    Image::from_straight(ART_SIZE, ART_SIZE, px)
+}
+
 impl MediaInfo {
+    /// A well-known song for `--snapshot` pictures (`FUZZIE_DEMO=1`), with a drawn cover.
+    pub fn demo(title: &str, artist: &str, duration_ms: u64) -> Self {
+        Self {
+            available: true,
+            playing: true,
+            title: title.into(),
+            artist: artist.into(),
+            source: "Spotify".into(),
+            duration_ms,
+            position_ms: 49_000,
+            shuffle: Some(true),
+            art: Some(Arc::new(demo_art())),
+            ..Default::default()
+        }
+    }
+
     /// Identifies the track; lyrics and art are matched against it.
     pub fn key(&self) -> String {
         format!("{}\u{1}{}", self.artist, self.title)
