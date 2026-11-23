@@ -133,6 +133,18 @@ pub enum Hit {
     LyricLine(usize),
     AddFriend,
     Requests,
+    /// Friends page sub-views: back to the list, copy our code, the code box,
+    /// paste into it, send the request, answer / cancel the n-th request.
+    FriendsBack,
+    CopyCode,
+    CodeBox,
+    PasteCode,
+    SendCode,
+    Accept(usize),
+    Decline(usize),
+    Cancel(usize),
+    /// Requests page tab: 0 received, 1 sent.
+    ReqTab(u8),
     /// Poke the n-th friend on the friends page / listen along with them.
     Poke(usize),
     Along(usize),
@@ -189,6 +201,13 @@ pub struct Scene<'a> {
     /// Friends, sorted as the friends page shows them.
     pub social: &'a crate::social::State,
     pub social_on: bool,
+    /// Friends page: 0 the list, 1 add a friend, 2 requests.
+    pub friend_view: u8,
+    pub friend_tab: u8,
+    /// The friend code typed so far, whether the box has the keyboard, and a short note.
+    pub friend_input: &'a str,
+    pub friend_typing: bool,
+    pub friend_note: Option<&'a str>,
     /// 0 = two columns (lyrics on the right), 1 = wide music layout (lyrics off).
     pub wide: f32,
     /// Volume 0..1 and mute of the app playing the media; None when it has no
@@ -256,6 +275,7 @@ struct Fonts {
     small_center: IDWriteTextFormat,
     small_right: IDWriteTextFormat,
     section: IDWriteTextFormat,
+    big: IDWriteTextFormat,
     pill: IDWriteTextFormat,
     lyric: IDWriteTextFormat,
     lyric_small: IDWriteTextFormat,
@@ -407,6 +427,7 @@ impl Renderer {
                 small_center: format(&dw, text, 11.0, normal, center)?,
                 small_right: format(&dw, text, 11.5, normal, right)?,
                 section: format(&dw, text, 14.5, semi, left)?,
+                big: format(&dw, text, 22.0, windows::Win32::Graphics::DirectWrite::DWRITE_FONT_WEIGHT_BOLD, left)?,
                 pill: format(&dw, text, 12.5, semi, center)?,
                 lyric: format(&dw, text, 13.5, semi, left)?,
                 lyric_small: format(&dw, text, 13.0, semi, left)?,
@@ -414,7 +435,7 @@ impl Renderer {
                 icons_small: format(&dw, icon_font, 13.0, normal, center)?,
                 icons_big: format(&dw, icon_font, 26.0, normal, center)?,
             };
-            for tf in [&f.clock_small, &f.clock, &f.date, &f.title, &f.body, &f.small, &f.small_center, &f.small_right, &f.section, &f.pill, &f.lyric, &f.lyric_small] {
+            for tf in [&f.clock_small, &f.clock, &f.date, &f.title, &f.body, &f.small, &f.small_center, &f.small_right, &f.section, &f.big, &f.pill, &f.lyric, &f.lyric_small] {
                 let sign = dw.CreateEllipsisTrimmingSign(tf)?;
                 let trimming = DWRITE_TRIMMING { granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER, delimiter: 0, delimiterCount: 0 };
                 tf.SetTrimming(&trimming, &sign)?;
@@ -1371,6 +1392,23 @@ impl Renderer {
         let lx = x0 + 22.0;
         let right = x0 + w - 18.0;
         let tr = D2D_RECT_F { left: lx, top: 42.0, right: lx + 200.0, bottom: 66.0 };
+        if s.friend_view != 0 && s.social_on {
+            // "‹ Title": the whole thing goes back to the list.
+            let title = if s.friend_view == 1 { "Add friend" } else { "Requests" };
+            let tw = self.measure(title, &self.f.section);
+            let back = D2D_RECT_F { left: lx - 6.0, top: 42.0, right: lx + 26.0 + tw, bottom: 66.0 };
+            let hot = s.hv(Hit::FriendsBack);
+            if hot > 0.0 {
+                unsafe {
+                    let rr = D2D1_ROUNDED_RECT { rect: back, radiusX: 10.0, radiusY: 10.0 };
+                    self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), 0.08 * hot * a)?);
+                }
+            }
+            self.text("\u{E76B}", &self.f.icons_small, D2D_RECT_F { left: lx - 4.0, right: lx + 14.0, ..tr }, self.fg(), a)?;
+            self.text(title, &self.f.section, D2D_RECT_F { left: lx + 20.0, right: lx + 30.0 + tw, ..tr }, self.fg(), a)?;
+            hits.push((back, Hit::FriendsBack));
+            return if s.friend_view == 1 { self.add_friend_view(s, lx, right, a, hits) } else { self.requests_view(s, lx, right, a, hits) };
+        }
         self.text("Friends", &self.f.section, tr, self.fg(), a)?;
         let cw = self.measure("Friends", &self.f.section);
         let so = s.social;
@@ -1418,6 +1456,152 @@ impl Renderer {
         self.text(l1, &self.f.pill, t1, self.fg(), a)?;
         let t2 = D2D_RECT_F { top: t1.bottom, bottom: t1.bottom + 20.0, ..t1 };
         self.text(l2, &self.f.small_center, t2, self.dim(), a)?;
+        Ok(())
+    }
+
+    /// A rounded button with a centred label; `on` fills it with the accent.
+    #[allow(clippy::too_many_arguments)]
+    fn pill(&self, s: &Scene, r: D2D_RECT_F, label: &str, hit: Hit, on: bool, a: f32, hits: &mut Hits) -> Result<()> {
+        let hot = s.hv(hit);
+        let (c, k) = if on { (s.theme.accent, 0.55 + 0.2 * hot) } else { (self.fg(), 0.1 + 0.07 * hot) };
+        unsafe {
+            let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 12.0, radiusY: 12.0 };
+            self.rt.FillRoundedRectangle(&rr, &self.brush(c, k * a)?);
+        }
+        self.text(label, &self.f.pill, r, self.fg(), a)?;
+        hits.push((r, hit));
+        Ok(())
+    }
+
+    /// A button with an icon before its label; `on` fills it with the accent.
+    #[allow(clippy::too_many_arguments)]
+    fn icon_pill(&self, s: &Scene, r: D2D_RECT_F, icon: &str, label: &str, hit: Hit, on: bool, a: f32, hits: &mut Hits) -> Result<()> {
+        let hot = s.hv(hit);
+        let (c, k) = if on { (s.theme.accent, 0.55 + 0.2 * hot) } else { (self.fg(), 0.1 + 0.07 * hot) };
+        unsafe {
+            let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 9.0, radiusY: 9.0 };
+            self.rt.FillRoundedRectangle(&rr, &self.brush(c, k * a)?);
+        }
+        let lw = self.measure(label, &self.f.pill);
+        let start = (r.left + r.right) / 2.0 - (lw + 20.0) / 2.0;
+        self.text(icon, &self.f.icons_small, D2D_RECT_F { left: start, right: start + 14.0, ..r }, self.fg(), a)?;
+        self.text(label, &self.f.pill, D2D_RECT_F { left: start + 20.0, right: start + 20.0 + lw, ..r }, self.fg(), a)?;
+        hits.push((r, hit));
+        Ok(())
+    }
+
+    /// Our code on the left; a box for a friend's code on the right.
+    fn add_friend_view(&self, s: &Scene, lx: f32, right: f32, a: f32, hits: &mut Hits) -> Result<()> {
+        let so = s.social;
+        let mid = (lx + right) / 2.0;
+        // Our code.
+        self.text("Your code", &self.f.small, D2D_RECT_F { left: lx, top: 76.0, right: mid - 16.0, bottom: 92.0 }, self.dim(), a)?;
+        let code = if so.code.is_empty() { "\u{2026}" } else { so.code.as_str() };
+        self.text(code, &self.f.big, D2D_RECT_F { left: lx, top: 92.0, right: mid - 16.0, bottom: 124.0 }, self.fg(), a)?;
+        let copy = D2D_RECT_F { left: lx, top: 132.0, right: lx + 86.0, bottom: 158.0 };
+        self.icon_pill(s, copy, "\u{E8C8}", "Copy", Hit::CopyCode, false, a, hits)?;
+        unsafe {
+            let line = D2D_RECT_F { left: mid - 0.5, top: 78.0, right: mid + 0.5, bottom: 178.0 };
+            self.rt.FillRectangle(&line, &self.brush(self.fg(), 0.1 * a)?);
+        }
+
+        // Their code.
+        let cl = mid + 16.0;
+        self.text("Friend's code", &self.f.small, D2D_RECT_F { left: cl, top: 76.0, right, bottom: 92.0 }, self.dim(), a)?;
+        let field = D2D_RECT_F { left: cl, top: 96.0, right, bottom: 124.0 };
+        let hot = s.hv(Hit::CodeBox);
+        unsafe {
+            let rr = D2D1_ROUNDED_RECT { rect: field, radiusX: 9.0, radiusY: 9.0 };
+            self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), (0.07 + 0.05 * hot) * a)?);
+            if s.friend_typing {
+                self.rt.DrawRoundedRectangle(&rr, &self.brush(s.theme.accent, 0.9 * a)?, 1.5, None);
+            }
+        }
+        hits.push((field, Hit::CodeBox));
+        let tr = D2D_RECT_F { left: field.left + 12.0, top: field.top + 5.0, right: field.right - 10.0, bottom: field.bottom };
+        if s.friend_input.is_empty() && !s.friend_typing {
+            self.text("FUZ-XXXXXX", &self.f.body, tr, self.dim(), 0.6 * a)?;
+        } else {
+            let caret = s.friend_typing && (s.time * 2.0) as i64 % 2 == 0;
+            let shown = format!("{}{}", s.friend_input, if caret { "|" } else { "" });
+            self.text(&shown, &self.f.body, tr, self.fg(), a)?;
+        }
+        let send = D2D_RECT_F { left: cl, top: 132.0, right: cl + 80.0, bottom: 158.0 };
+        self.icon_pill(s, send, "\u{E72A}", "Send", Hit::SendCode, !s.friend_input.is_empty(), a, hits)?;
+        let paste = D2D_RECT_F { left: send.right + 6.0, right: send.right + 92.0, ..send };
+        self.icon_pill(s, paste, "\u{E77F}", "Paste", Hit::PasteCode, false, a, hits)?;
+
+        let fresh = |t: &std::time::Instant| t.elapsed().as_secs() < 8;
+        let note = match (&so.error, s.friend_note) {
+            (Some((e, t)), _) if fresh(t) => Some(e.as_str()),
+            (_, Some(n)) => Some(n),
+            _ => None,
+        };
+        if let Some(n) = note {
+            self.text(n, &self.f.small, D2D_RECT_F { left: lx, top: 164.0, right, bottom: 180.0 }, self.dim(), a)?;
+        }
+        Ok(())
+    }
+
+    /// Requests: the ones waiting for us (Accept / Decline) or the ones we sent (Cancel).
+    fn requests_view(&self, s: &Scene, lx: f32, right: f32, a: f32, hits: &mut Hits) -> Result<()> {
+        let so = s.social;
+        // Received / Sent tabs on the right of the title.
+        let sent_label = format!("Sent {}", so.outgoing.len());
+        let got_label = format!("Received {}", so.incoming.len());
+        let sw = 22.0 + self.measure(&sent_label, &self.f.pill);
+        let gw = 22.0 + self.measure(&got_label, &self.f.pill);
+        let sent = D2D_RECT_F { left: right - sw, top: 42.0, right, bottom: 66.0 };
+        let got = D2D_RECT_F { left: sent.left - 6.0 - gw, right: sent.left - 6.0, ..sent };
+        for (r, label, tab) in [(got, got_label.as_str(), 0u8), (sent, sent_label.as_str(), 1u8)] {
+            let on = s.friend_tab == tab;
+            let hot = s.hv(Hit::ReqTab(tab));
+            let k = if on { 0.16 } else { 0.07 * hot };
+            unsafe {
+                let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 12.0, radiusY: 12.0 };
+                self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), k * a)?);
+            }
+            self.text(label, &self.f.pill, r, if on { self.fg() } else { self.dim() }, a)?;
+            hits.push((r, Hit::ReqTab(tab)));
+        }
+
+        const ROW: f32 = 36.0;
+        let list = if s.friend_tab == 0 { &so.incoming } else { &so.outgoing };
+        if list.is_empty() {
+            self.mascot(s, lx + 30.0, 122.0, 30.0, a)?;
+            let msg = if s.friend_tab == 0 { "No requests right now" } else { "No pending requests" };
+            self.text(msg, &self.f.body, D2D_RECT_F { left: lx + 66.0, top: 112.0, right, bottom: 132.0 }, self.dim(), a)?;
+            return Ok(());
+        }
+        for (i, (c, n)) in list.iter().enumerate().take(3) {
+            let name = if n.is_empty() { c.as_str() } else { n.as_str() };
+            let top = 76.0 + i as f32 * (ROW + 4.0);
+            let cy = top + ROW / 2.0;
+            let row = D2D_RECT_F { left: lx, top, right, bottom: top + ROW };
+            unsafe {
+                let rr = D2D1_ROUNDED_RECT { rect: row, radiusX: 12.0, radiusY: 12.0 };
+                self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), 0.04 * a)?);
+            }
+            let mut bx = right - 6.0;
+            let mut button = |label: &str, hit: Hit, on: bool| -> Result<()> {
+                let bw = 22.0 + self.measure(label, &self.f.pill);
+                let r = D2D_RECT_F { left: bx - bw, top: cy - 12.0, right: bx, bottom: cy + 12.0 };
+                self.pill(s, r, label, hit, on, a, hits)?;
+                bx = r.left - 6.0;
+                Ok(())
+            };
+            let sub = if s.friend_tab == 0 {
+                button("Decline", Hit::Decline(i), false)?;
+                button("Accept", Hit::Accept(i), true)?;
+                format!("{c} \u{00B7} wants to be friends")
+            } else {
+                button("Cancel", Hit::Cancel(i), false)?;
+                format!("{c} \u{00B7} waiting for an answer")
+            };
+            let tl = lx + 14.0;
+            self.text(name, &self.f.body, D2D_RECT_F { left: tl, top: cy - 17.0, right: bx - 4.0, bottom: cy + 1.0 }, self.fg(), a)?;
+            self.text(&sub, &self.f.small, D2D_RECT_F { left: tl, top: cy + 1.0, right: bx - 4.0, bottom: cy + 15.0 }, self.dim(), a)?;
+        }
         Ok(())
     }
 

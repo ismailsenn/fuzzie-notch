@@ -167,6 +167,7 @@ pub enum Key {
     SocialOn,
     ShareMusic,
     SocialName,
+    SettingsZoom,
 }
 
 const NAP_SECS: [u32; 5] = [10, 30, 60, 120, 300];
@@ -613,9 +614,23 @@ pub fn open() {
     }
 }
 
+/// Physical pixels per layout unit, before the user's zoom.
+fn base_scale(hwnd: HWND) -> f32 {
+    unsafe { GetDpiForWindow(hwnd) }.max(96) as f32 / 96.0 / UNIT
+}
+
+/// The zoom set by dragging the window's edges (f32 bits).
+static ZOOM: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000);
+const ZOOM_MIN: f32 = 0.6;
+const ZOOM_MAX: f32 = 1.8;
+
+fn zoom() -> f32 {
+    f32::from_bits(ZOOM.load(std::sync::atomic::Ordering::Relaxed))
+}
+
 /// Physical pixels per layout unit.
 fn scale_of(hwnd: HWND) -> f32 {
-    unsafe { GetDpiForWindow(hwnd) }.max(96) as f32 / 96.0 / UNIT
+    base_scale(hwnd) * zoom()
 }
 
 impl SettingsWindow {
@@ -644,7 +659,7 @@ impl SettingsWindow {
                 WS_EX_APPWINDOW,
                 class,
                 w!("Fuzzie Settings"),
-                WS_POPUP | WS_SYSMENU | WS_MINIMIZEBOX,
+                WS_POPUP | WS_SYSMENU | WS_MINIMIZEBOX | windows::Win32::UI::WindowsAndMessaging::WS_THICKFRAME,
                 r.left,
                 r.top,
                 100,
@@ -654,6 +669,11 @@ impl SettingsWindow {
                 Some(hinstance.into()),
                 None,
             )?;
+            // The last size, but never larger than the screen.
+            let saved = window::settings_snapshot().map_or(1.0, |s| s.settings_zoom);
+            let fit = ((r.right - r.left) as f32 / (WIN_W * base_scale(hwnd))).min((r.bottom - r.top) as f32 / (WIN_H * base_scale(hwnd)));
+            let z = saved.clamp(ZOOM_MIN, ZOOM_MAX).min(fit.max(ZOOM_MIN));
+            ZOOM.store(z.to_bits(), std::sync::atomic::Ordering::Relaxed);
             let s = scale_of(hwnd);
             let (w, h) = ((WIN_W * s) as i32, (WIN_H * s) as i32);
             let x = r.left + ((r.right - r.left) - w) / 2;
@@ -2219,6 +2239,28 @@ impl SettingsWindow {
         }
         let s = scale_of(self.hwnd);
         let (x, y) = (pt.x as f32 / s, pt.y as f32 / s);
+        // Edges and corners resize (the whole page zooms, keeping its shape).
+        use windows::Win32::UI::WindowsAndMessaging::{HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT};
+        let mut rc = RECT::default();
+        unsafe {
+            let _ = GetClientRect(self.hwnd, &mut rc);
+        }
+        let g = 7;
+        let (l, r, t, b) = (pt.x < g, pt.x >= rc.right - g, pt.y < g, pt.y >= rc.bottom - g);
+        let edge = match (l, r, t, b) {
+            (true, _, true, _) => Some(HTTOPLEFT),
+            (_, true, true, _) => Some(HTTOPRIGHT),
+            (true, _, _, true) => Some(HTBOTTOMLEFT),
+            (_, true, _, true) => Some(HTBOTTOMRIGHT),
+            (true, ..) => Some(HTLEFT),
+            (_, true, ..) => Some(HTRIGHT),
+            (_, _, true, _) => Some(HTTOP),
+            (.., true) => Some(HTBOTTOM),
+            _ => None,
+        };
+        if let Some(e) = edge {
+            return LRESULT(e as isize);
+        }
         if y < 90.0 && self.hit_at(x, y).is_none() {
             LRESULT(HTCAPTION as isize)
         } else {
@@ -2236,17 +2278,48 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             let _ = EndPaint(hwnd, &ps);
             Some(LRESULT(0))
         }
+        // No system frame: the page fills the whole window (WS_THICKFRAME is only for resizing).
+        windows::Win32::UI::WindowsAndMessaging::WM_NCCALCSIZE if wp.0 != 0 => Some(LRESULT(0)),
+        windows::Win32::UI::WindowsAndMessaging::WM_SIZING => {
+            // Keep the page's shape and follow the edge being dragged.
+            use windows::Win32::UI::WindowsAndMessaging::{WMSZ_BOTTOM, WMSZ_TOP};
+            let r = &mut *(lp.0 as *mut RECT);
+            let base = base_scale(hwnd);
+            let edge = wp.0 as u32;
+            let z = if edge == WMSZ_TOP || edge == WMSZ_BOTTOM {
+                (r.bottom - r.top) as f32 / (WIN_H * base)
+            } else {
+                (r.right - r.left) as f32 / (WIN_W * base)
+            }
+            .clamp(ZOOM_MIN, ZOOM_MAX);
+            let (w, h) = ((WIN_W * base * z).round() as i32, (WIN_H * base * z).round() as i32);
+            use windows::Win32::UI::WindowsAndMessaging::{WMSZ_BOTTOMLEFT, WMSZ_LEFT, WMSZ_TOPLEFT, WMSZ_TOPRIGHT};
+            if matches!(edge, WMSZ_LEFT | WMSZ_TOPLEFT | WMSZ_BOTTOMLEFT) {
+                r.left = r.right - w;
+            } else {
+                r.right = r.left + w;
+            }
+            if matches!(edge, WMSZ_TOP | WMSZ_TOPLEFT | WMSZ_TOPRIGHT) {
+                r.top = r.bottom - h;
+            } else {
+                r.bottom = r.top + h;
+            }
+            ZOOM.store(z.to_bits(), std::sync::atomic::Ordering::Relaxed);
+            Some(LRESULT(1))
+        }
+        windows::Win32::UI::WindowsAndMessaging::WM_EXITSIZEMOVE => {
+            let z = zoom();
+            if window::settings_snapshot().is_some_and(|s| (s.settings_zoom - z).abs() > 0.001) {
+                window::change_setting(Key::SettingsZoom, |s| s.settings_zoom = z);
+            }
+            None
+        }
         WM_SIZE => {
+            // Rebuilt at the new size and zoom on the next paint.
             with_win(|w| {
-                if let Some(rt) = &w.rt {
-                    let mut rc = RECT::default();
-                    let _ = GetClientRect(hwnd, &mut rc);
-                    let _ = rt.Resize(&D2D_SIZE_U { width: rc.right as u32, height: rc.bottom as u32 });
-                }
-                if let Some(c) = w.cache.take() {
-                    mascot::release(&c, &w.factory);
-                }
+                w.drop_targets();
                 w.dirty.set(true);
+                w.invalidate();
             });
             Some(LRESULT(0))
         }

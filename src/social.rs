@@ -539,6 +539,7 @@ pub fn demo() {
             f("Mert", "FUZ-H7W2JC", 2, 1, false, None),
         ];
         s.incoming = vec![("FUZ-Z3Y4XW".into(), "Kaan".into())];
+        s.outgoing = vec![("FUZ-M4N5PQ".into(), "Lale".into())];
         s.along = Some("FUZ-VS7DEF".into());
     });
 }

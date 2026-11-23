@@ -143,6 +143,13 @@ struct App {
     /// already jumped to their position in.
     along_opened: String,
     along_synced: String,
+    /// Friends page: 0 the list, 1 add a friend, 2 requests; the friend code
+    /// being typed, whether the box has the keyboard, and a short note.
+    friend_view: u8,
+    friend_tab: u8,
+    friend_input: String,
+    friend_typing: bool,
+    friend_note: Option<(String, Instant)>,
 }
 
 thread_local! {
@@ -261,6 +268,11 @@ pub fn run(settings: Settings) -> Result<()> {
             started: Instant::now(),
             along_opened: String::new(),
             along_synced: String::new(),
+            friend_view: 0,
+            friend_tab: 0,
+            friend_input: String::new(),
+            friend_typing: false,
+            friend_note: None,
         };
         app.redraw();
         NOTCH.store(hwnd.0 as isize, std::sync::atomic::Ordering::Relaxed);
@@ -516,6 +528,11 @@ impl App {
             low: self.lower_half(),
             social: &social,
             social_on: self.settings.social_on,
+            friend_view: self.friend_view,
+            friend_tab: self.friend_tab,
+            friend_input: &self.friend_input,
+            friend_typing: self.friend_typing,
+            friend_note: self.friend_note.as_ref().filter(|n| n.1.elapsed().as_secs() < 8).map(|n| n.0.as_str()),
             wide: self.wide,
             volume: self.audio.as_ref().and_then(|a| a.app_state()),
             vol_open: self.vol_open,
@@ -625,6 +642,21 @@ impl App {
             self.page_pos = page as f32;
             save(self, name);
         }
+        // The friends page: adding a friend (a code half typed) and the requests.
+        self.page = 2;
+        self.page_pos = 2.0;
+        self.friend_view = 1;
+        self.friend_input = "FUZ-7KQ".into();
+        self.friend_typing = true;
+        save(self, "friends_add.png");
+        self.friend_view = 2;
+        self.friend_typing = false;
+        self.friend_input.clear();
+        save(self, "friends_requests.png");
+        self.friend_tab = 1;
+        save(self, "friends_sent.png");
+        self.friend_tab = 0;
+        self.friend_view = 0;
         // The music page with the volume slider open.
         self.page = 0;
         self.page_pos = 0.0;
@@ -840,7 +872,7 @@ impl App {
         let inside = !self.ghost && x >= b.left && x <= b.right && y >= b.top - 1.0 && y <= b.bottom + 4.0;
         if inside && self.settings.open_mode == OpenMode::Hover {
             self.set_open(true);
-        } else if !inside && !self.tracking_leave && self.open && !self.drag_over && self.vol_drag.is_none() {
+        } else if !inside && !self.tracking_leave && self.open && !self.drag_over && self.vol_drag.is_none() && !self.friend_typing {
             self.hot = None;
             self.set_open(false);
         }
@@ -910,7 +942,7 @@ impl App {
             return;
         }
         self.hot = None;
-        if !self.drag_over {
+        if !self.drag_over && !self.friend_typing {
             self.set_open(false);
         }
         self.start_anim();
@@ -994,6 +1026,9 @@ impl App {
             return false;
         }
         let (r, hit) = self.hits[i];
+        if self.friend_typing && !matches!(hit, Hit::CodeBox | Hit::PasteCode | Hit::SendCode) {
+            self.friend_typing = false;
+        }
         if !matches!(hit, Hit::Seek | Hit::VolumeBar | Hit::ClipList | Hit::LyricList | Hit::Page(_)) {
             self.flash = Some((hit, 1.0));
             self.start_anim();
@@ -1051,7 +1086,48 @@ impl App {
                     self.lyric_scrolled_at = None;
                 }
             }
-            Hit::AddFriend | Hit::Requests => crate::settings_win::open_at(8, 0.0, false, 0),
+            Hit::AddFriend => self.friend_view = 1,
+            Hit::Requests => {
+                self.friend_view = 2;
+                // Open on whichever side has something.
+                let so = crate::social::snapshot();
+                self.friend_tab = u8::from(so.incoming.is_empty() && !so.outgoing.is_empty());
+            }
+            Hit::ReqTab(t) => self.friend_tab = t,
+            Hit::FriendsBack => {
+                self.friend_view = 0;
+                self.friend_typing = false;
+            }
+            Hit::CopyCode => {
+                let code = crate::social::snapshot().code;
+                if !code.is_empty() {
+                    crate::clipboard::set_text(self.hwnd, &code);
+                    self.friend_note = Some((format!("Copied {code}: send it to a friend"), Instant::now()));
+                }
+            }
+            Hit::CodeBox => self.start_typing(),
+            Hit::PasteCode => {
+                if let Some(t) = crate::clipboard::get_text(self.hwnd) {
+                    self.friend_input = t.chars().filter(|c| !c.is_control()).take(16).collect::<String>().trim().to_string();
+                }
+                self.start_typing();
+            }
+            Hit::SendCode => self.send_code(),
+            Hit::Accept(i) => {
+                if let Some((c, _)) = crate::social::snapshot().incoming.get(i) {
+                    crate::social::accept(c);
+                }
+            }
+            Hit::Decline(i) => {
+                if let Some((c, _)) = crate::social::snapshot().incoming.get(i) {
+                    crate::social::decline(c);
+                }
+            }
+            Hit::Cancel(i) => {
+                if let Some((c, _)) = crate::social::snapshot().outgoing.get(i) {
+                    crate::social::decline(c);
+                }
+            }
             Hit::Poke(i) => {
                 if let Some(f) = crate::social::snapshot().friends.get(i) {
                     crate::social::poke(&f.code);
@@ -1066,6 +1142,65 @@ impl App {
         }
         self.redraw();
         false
+    }
+
+    /// Gives the notch the keyboard so a friend code can be typed in.
+    fn start_typing(&mut self) {
+        self.friend_typing = true;
+        unsafe {
+            let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(self.hwnd);
+            let _ = windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(Some(self.hwnd));
+        }
+        self.start_anim();
+    }
+
+    /// Sends a friend request to the code in the box.
+    fn send_code(&mut self) {
+        let text = self.friend_input.trim().to_string();
+        if text.is_empty() {
+            self.friend_note = Some(("Type or paste your friend's code first".into(), Instant::now()));
+            return;
+        }
+        match crate::social::clean_code(&text) {
+            Some(c) if c == crate::social::snapshot().code => {
+                self.friend_note = Some(("That's your own code".into(), Instant::now()));
+            }
+            Some(c) => {
+                crate::social::add(&c);
+                self.friend_note = Some((format!("Request sent to {c}"), Instant::now()));
+                self.friend_input.clear();
+                self.friend_typing = false;
+            }
+            None => self.friend_note = Some(("Friend codes look like FUZ-A4G7B9".into(), Instant::now())),
+        }
+    }
+
+    /// A key typed while the friend code box has the keyboard.
+    fn on_char(&mut self, c: u32) {
+        if !self.friend_typing {
+            return;
+        }
+        match c {
+            0x08 => {
+                self.friend_input.pop();
+            }
+            0x0D => self.send_code(),
+            0x1B => self.friend_typing = false,
+            // Ctrl+V
+            0x16 => {
+                if let Some(t) = crate::clipboard::get_text(self.hwnd) {
+                    self.friend_input.extend(t.chars().filter(|c| !c.is_control()));
+                }
+            }
+            c if c >= 0x20 => {
+                if let Some(ch) = char::from_u32(c) {
+                    self.friend_input.push(ch);
+                }
+            }
+            _ => return,
+        }
+        self.friend_input = self.friend_input.chars().take(16).collect();
+        self.redraw();
     }
 
     fn on_right_click(&mut self, lp: LPARAM) {
@@ -1537,6 +1672,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         }
         WM_RBUTTONUP => {
             with_app(|a| a.on_right_click(lp));
+            LRESULT(0)
+        }
+        windows::Win32::UI::WindowsAndMessaging::WM_CHAR => {
+            with_app(|a| a.on_char(wp.0 as u32));
+            LRESULT(0)
+        }
+        windows::Win32::UI::WindowsAndMessaging::WM_KILLFOCUS => {
+            with_app(|a| {
+                if a.friend_typing {
+                    a.friend_typing = false;
+                    a.redraw();
+                }
+            });
             LRESULT(0)
         }
         WM_FRAME => {

@@ -145,6 +145,8 @@ pub struct Settings {
     pub share_music: bool,
     /// Name friends see ("" = "Fuzzie").
     pub social_name: String,
+    /// Size of the settings window (1 = normal), set by dragging its edges.
+    pub settings_zoom: f32,
 }
 
 impl Default for Settings {
@@ -157,7 +159,7 @@ impl Default for Settings {
             show_seconds: false,
             scale: 0.9,
             background: "#000000".into(),
-            background_opacity: 0.96,
+            background_opacity: 1.0,
             accent: "#FF8A3D".into(),
             show_lyrics: true,
             ghost_secs: 2.0,
@@ -192,6 +194,7 @@ impl Default for Settings {
             social_on: true,
             share_music: true,
             social_name: String::new(),
+            settings_zoom: 1.0,
             desk_glow: true,
             desk_acc: true,
             desk_on_taskbar: true,
@@ -252,9 +255,9 @@ impl Settings {
         fs::rename(tmp, path)
     }
 
-    /// Background opacity after the glass setting.
+    /// Background opacity: fully opaque unless the glass effect is on.
     pub fn opacity(&self) -> f32 {
-        if self.glass { 0.72 } else { self.background_opacity.clamp(0.2, 1.0) }
+        if self.glass { 0.72 } else { 1.0 }
     }
 
     pub fn scale(&self) -> f32 {
