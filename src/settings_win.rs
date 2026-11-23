@@ -103,6 +103,7 @@ const PAGES: [(&str, &str); 12] = [
 const PAGE_CUSTOMIZE: usize = 2;
 const PAGE_DESK: usize = 3;
 const PAGE_STATS: usize = 9;
+const PAGE_UPDATES: usize = 10;
 /// A timer for live numbers on the Stats page; frames for tweens (~60 fps) and
 /// for the animated foxes on Customize and About (~30 fps) come from the vblank clock.
 const TIMER_STATS: usize = 1;
@@ -430,6 +431,8 @@ enum Act {
     StepAcc(i64),
     Random,
     OpenFolder,
+    CheckUpdate,
+    InstallUpdate,
     ToggleYears,
 }
 
@@ -816,10 +819,29 @@ impl SettingsWindow {
                 v.extend([Divider, FriendTable, RpsTable]);
                 v
             }
-            10 => vec![
-                Row("Version", env!("CARGO_PKG_VERSION").to_string()),
-                t("Updates will be offered here once Fuzzie releases are published."),
-            ],
+            10 => {
+                use crate::updater::Status;
+                let status = crate::updater::status();
+                let line = match &status {
+                    Status::Idle => "Not checked yet".to_string(),
+                    Status::Checking => "Checking\u{2026}".to_string(),
+                    Status::UpToDate => "You're up to date".to_string(),
+                    Status::Available(tag) => format!("{} is available", tag),
+                    Status::Installing => "Installing\u{2026} Fuzzie will restart".to_string(),
+                    Status::Failed => "Couldn't reach GitHub. Try again later.".to_string(),
+                };
+                let mut v = vec![
+                    Row("Version", env!("CARGO_PKG_VERSION").to_string()),
+                    Row("Status", line),
+                    Button("Check for updates", Act::CheckUpdate, 210.0),
+                ];
+                if matches!(status, Status::Available(_)) {
+                    v.push(Button("Install update", Act::InstallUpdate, 210.0));
+                }
+                v.extend([Section("AUTOMATIC"), Toggle("Update automatically", Key::AutoUpdate)]);
+                v.push(t("New versions install by themselves within minutes of release."));
+                v
+            }
             _ => vec![
                 MascotCard,
                 Row("Version", env!("CARGO_PKG_VERSION").to_string()),
@@ -1885,6 +1907,8 @@ impl SettingsWindow {
                 });
             }
             Act::OpenFolder => window::open_data_folder(),
+            Act::CheckUpdate => crate::updater::check_now(),
+            Act::InstallUpdate => crate::updater::install_now(),
             Act::ToggleYears => self.years_open = !self.years_open,
         }
         // Knobs, highlights and fades ease toward the new state.
@@ -1967,7 +1991,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_TIMER => with_win(|w| match wp.0 {
             TIMER_BLINK => w.on_blink_timer(),
             TIMER_EYES => w.on_eyes_timer(),
-            _ if w.page == PAGE_STATS => w.invalidate(),
+            _ if w.page == PAGE_STATS || w.page == PAGE_UPDATES => w.invalidate(),
             _ => {}
         })
         .map(|_| LRESULT(0)),
