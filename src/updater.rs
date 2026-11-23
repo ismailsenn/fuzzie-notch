@@ -20,8 +20,11 @@ use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_APP};
 const REPO: &str = "ismailsenn/Fuzzie";
 /// The release asset that is the app itself.
 const ASSET: &str = "Fuzzie.exe";
-const FIRST_CHECK: Duration = Duration::from_secs(30);
-const EVERY: Duration = Duration::from_secs(6 * 3600);
+/// Check soon after start, then often enough that a new release reaches
+/// everyone within minutes (6 calls an hour, well under GitHub's
+/// 60-per-hour limit for unauthenticated requests).
+const FIRST_CHECK: Duration = Duration::from_secs(5);
+const EVERY: Duration = Duration::from_secs(10 * 60);
 
 /// Posted to the notch window when a new exe is in place: restart on it.
 pub const WM_UPDATED: u32 = WM_APP + 9;
