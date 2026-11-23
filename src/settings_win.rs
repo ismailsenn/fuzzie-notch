@@ -104,6 +104,7 @@ const PAGE_CUSTOMIZE: usize = 2;
 const PAGE_DESK: usize = 3;
 const PAGE_STATS: usize = 9;
 const PAGE_UPDATES: usize = 10;
+const PAGE_SOCIAL: usize = 8;
 /// A timer for live numbers on the Stats page; frames for tweens (~60 fps) and
 /// for the animated foxes on Customize and About (~30 fps) come from the vblank clock.
 const TIMER_STATS: usize = 1;
@@ -163,6 +164,9 @@ pub enum Key {
     Notifications,
     AutoUpdate,
     MessagePreview,
+    SocialOn,
+    ShareMusic,
+    SocialName,
 }
 
 const NAP_SECS: [u32; 5] = [10, 30, 60, 120, 300];
@@ -200,6 +204,8 @@ fn get_bool(s: &Settings, k: Key) -> bool {
         Key::Notifications => s.show_notifications,
         Key::AutoUpdate => s.auto_update,
         Key::MessagePreview => s.show_message_preview,
+        Key::SocialOn => s.social_on,
+        Key::ShareMusic => s.share_music,
         _ => false,
     }
 }
@@ -236,6 +242,8 @@ fn set_bool(s: &mut Settings, k: Key, v: bool) {
         Key::Notifications => &mut s.show_notifications,
         Key::AutoUpdate => &mut s.auto_update,
         Key::MessagePreview => &mut s.show_message_preview,
+        Key::SocialOn => &mut s.social_on,
+        Key::ShareMusic => &mut s.share_music,
         _ => return,
     };
     *f = v;
@@ -406,6 +414,26 @@ enum Item {
     Divider,
     FriendTable,
     RpsTable,
+    /// A one-line text box.
+    Input(&'static str, Field),
+    /// A person: name, a line under it, and buttons on the right.
+    Person(String, String, Vec<(&'static str, Act)>),
+}
+
+/// Text boxes on the Social page.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Field {
+    Name,
+    Code,
+}
+
+impl Field {
+    fn max(self) -> usize {
+        match self {
+            Field::Name => 24,
+            Field::Code => 16,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -431,6 +459,13 @@ enum Act {
     StepAcc(i64),
     Random,
     OpenFolder,
+    Focus(Field),
+    CopyCode,
+    SendRequest,
+    Accept(usize),
+    Decline(usize),
+    Cancel(usize),
+    Remove(usize),
     CheckUpdate,
     InstallUpdate,
     ToggleYears,
@@ -478,6 +513,10 @@ pub struct SettingsWindow {
     hover: Vec<(Act, f32)>,
     /// The button just pressed and its feedback left (1 → 0).
     flash: Option<(Act, f32)>,
+    /// The text box being typed in and its text.
+    typing: Option<(Field, String)>,
+    /// A short message under "Add a friend" and when it was set.
+    note: Option<(String, Instant)>,
     /// The accent colour of the frame being drawn.
     accent_now: [f32; 3],
     /// Eased toggle knobs and segment highlights, per setting.
@@ -676,6 +715,8 @@ impl SettingsWindow {
                 hot: None,
                 hover: Vec::new(),
                 flash: None,
+                typing: None,
+                note: None,
                 accent_now: [0.78, 0.0, 0.94],
                 toggles: Vec::new(),
                 choices: Vec::new(),
@@ -803,7 +844,7 @@ impl SettingsWindow {
                 Toggle("Show notifications", Key::Notifications),
                 Toggle("Show message preview", Key::MessagePreview),
             ],
-            8 => vec![t("Friends, pokes, games and parties need the Fuzzie server, which is not set up yet.")],
+            8 => self.social_items(),
             PAGE_STATS => {
                 let mut v = vec![StatCard("LISTENING", "Total time listening on Spotify", stats::duration_words(st.listen_secs), Some(Act::ToggleYears))];
                 if self.years_open {
@@ -1453,6 +1494,40 @@ impl SettingsWindow {
                 Self::text(rt, t, &self.f.text, D2D_RECT_F { left: LEFT, top: y + 6.0, right: RIGHT, bottom: y + 32.0 }, DIM)?;
                 y + 36.0
             }
+            Item::Input(label, field) => {
+                Self::text(rt, label, &self.f.label, D2D_RECT_F { left: LEFT, top: y, right: RIGHT - 300.0, bottom: y + 52.0 }, FG)?;
+                let r = D2D_RECT_F { left: RIGHT - 280.0, top: y + 8.0, right: RIGHT, bottom: y + 46.0 };
+                Self::rounded(rt, r, 8.0, FIELD, 1.0)?;
+                let typing = self.typing.as_ref().filter(|t| t.0 == *field).map(|t| t.1.clone());
+                if typing.is_some() {
+                    Self::rounded(rt, r, 8.0, accent, 0.18)?;
+                } else if self.hv(Act::Focus(*field)) > 0.005 {
+                    Self::rounded(rt, r, 8.0, FG, 0.05 * self.hv(Act::Focus(*field)))?;
+                }
+                let (text, color) = match (typing, field) {
+                    (Some(t), _) => {
+                        let caret = self.started.elapsed().as_millis() / 530 % 2 == 0;
+                        (format!("{t}{}", if caret { "|" } else { " " }), FG)
+                    }
+                    (None, Field::Name) if !s.social_name.is_empty() => (s.social_name.clone(), FG),
+                    (None, Field::Name) => ("Fuzzie".to_string(), DIM),
+                    (None, Field::Code) => ("FUZ-XXXXXX".to_string(), DIM),
+                };
+                Self::text(rt, &text, &self.f.field, D2D_RECT_F { left: r.left + 13.0, right: r.right - 8.0, ..r }, color)?;
+                self.hits.push((r, Act::Focus(*field)));
+                y + 54.0
+            }
+            Item::Person(name, sub, buttons) => {
+                let mut x = RIGHT;
+                for (label, act) in buttons.iter().rev() {
+                    let r = D2D_RECT_F { left: x - 104.0, top: y + 9.0, right: x, bottom: y + 45.0 };
+                    self.button(rt, label, r, *act)?;
+                    x = r.left - 10.0;
+                }
+                Self::text(rt, name, &self.f.label, D2D_RECT_F { left: LEFT, top: y + 3.0, right: x - 8.0, bottom: y + 29.0 }, FG)?;
+                Self::text(rt, sub, &self.f.text, D2D_RECT_F { left: LEFT, top: y + 28.0, right: x - 8.0, bottom: y + 50.0 }, DIM)?;
+                y + 56.0
+            }
             Item::Row(label, value) => {
                 Self::text(rt, label, &self.f.label, D2D_RECT_F { left: LEFT, top: y, right: RIGHT, bottom: y + 48.0 }, FG)?;
                 Self::text(rt, value, &self.f.value, D2D_RECT_F { left: LEFT, top: y, right: RIGHT, bottom: y + 48.0 }, DIM)?;
@@ -1477,7 +1552,9 @@ impl SettingsWindow {
             }
             Item::YearBreakdown => {
                 let mut cy = y + 22.0;
-                for (year, data) in st.years.iter().rev() {
+                // Top songs and artists start over every New Year (local time).
+                let this_year = stats::current_year();
+                for (year, data) in st.years.iter().filter(|(y, _)| **y == this_year) {
                     let line = |cy: f32, x: f32| D2D_RECT_F { left: x, top: cy - 12.0, right: RIGHT, bottom: cy + 12.0 };
                     Self::text(rt, &format!("{year}: {}", stats::duration_words(data.secs)), &self.f.pink_head, line(cy, LEFT + 10.0), PINK)?;
                     cy += 27.0;
@@ -1498,7 +1575,7 @@ impl SettingsWindow {
                     }
                     cy += 34.0;
                 }
-                if st.years.is_empty() {
+                if !st.years.contains_key(&this_year) {
                     Self::text(rt, "Nothing yet: play something on Spotify.", &self.f.pink_item, D2D_RECT_F { left: LEFT + 10.0, top: cy - 12.0, right: RIGHT, bottom: cy + 12.0 }, PINK)?;
                     cy += 30.0;
                 }
@@ -1801,8 +1878,125 @@ impl SettingsWindow {
         }
     }
 
+    /// The Social page.
+    fn social_items(&self) -> Vec<Item> {
+        use crate::social::Conn;
+        use Item::*;
+        let so = crate::social::snapshot();
+        let mut v = vec![Section("YOU"), Toggle("Online with friends", Key::SocialOn)];
+        let code = match so.conn {
+            Conn::Online if !so.code.is_empty() => so.code.clone(),
+            Conn::Off => "Offline".into(),
+            Conn::Retrying => "Can't reach the Fuzzie server, retrying\u{2026}".into(),
+            _ => "Connecting\u{2026}".into(),
+        };
+        v.push(Row("Your friend code", code));
+        if !so.code.is_empty() {
+            v.push(Button("Copy my code", Act::CopyCode, 190.0));
+        }
+        v.push(Input("Name", Field::Name));
+        v.push(Toggle("Share what I'm playing", Key::ShareMusic));
+        v.push(Section("ADD A FRIEND"));
+        v.push(Input("Friend code", Field::Code));
+        v.push(Button("Send request", Act::SendRequest, 190.0));
+        let fresh = |t: Instant| t.elapsed() < std::time::Duration::from_secs(8);
+        let error = so.error.as_ref().filter(|e| fresh(e.1));
+        let note = self.note.as_ref().filter(|n| fresh(n.1));
+        match (error, note) {
+            (Some(e), Some(n)) if n.1 > e.1 => v.push(Text(n.0.clone())),
+            (Some(e), _) => v.push(Text(e.0.clone())),
+            (None, Some(n)) => v.push(Text(n.0.clone())),
+            _ => {}
+        }
+        if !so.incoming.is_empty() || !so.outgoing.is_empty() {
+            v.push(Section("REQUESTS"));
+            for (i, (c, n)) in so.incoming.iter().enumerate() {
+                v.push(Person(n.clone(), format!("{c}  \u{00B7}  wants to be friends"), vec![("Accept", Act::Accept(i)), ("Decline", Act::Decline(i))]));
+            }
+            for (i, (c, n)) in so.outgoing.iter().enumerate() {
+                v.push(Person(n.clone(), format!("{c}  \u{00B7}  waiting for them"), vec![("Cancel", Act::Cancel(i))]));
+            }
+        }
+        v.push(Section("FRIENDS"));
+        if so.friends.is_empty() {
+            v.push(Text("No friends yet: share your code, or add theirs above.".into()));
+        }
+        for (i, f) in so.friends.iter().enumerate() {
+            let sub = match (&f.np, f.online) {
+                (Some(t), true) => format!("{}  \u{00B7}  \u{266A} {} \u{2014} {}", f.code, t.title, t.artist),
+                (None, true) => format!("{}  \u{00B7}  online", f.code),
+                _ => format!("{}  \u{00B7}  offline", f.code),
+            };
+            v.push(Person(f.name.clone(), sub, vec![("Remove", Act::Remove(i))]));
+        }
+        v.push(Text("Friends see your name, your Fuzzie and, if shared, the song you play.".into()));
+        v
+    }
+
+    fn on_char(&mut self, c: u32) {
+        let Some((field, mut buf)) = self.typing.clone() else { return };
+        match c {
+            0x08 => {
+                buf.pop();
+            }
+            0x0D => {
+                self.commit_typing();
+                return;
+            }
+            0x1B => {
+                self.typing = None;
+                self.invalidate();
+                return;
+            }
+            // Ctrl+V
+            0x16 => {
+                if let Some(t) = clipboard::get_text(self.hwnd) {
+                    buf.extend(t.chars().filter(|c| !c.is_control()));
+                }
+            }
+            c if c >= 0x20 => {
+                if let Some(ch) = char::from_u32(c) {
+                    buf.push(ch);
+                }
+            }
+            _ => return,
+        }
+        let buf: String = buf.chars().take(field.max()).collect();
+        self.typing = Some((field, buf));
+        self.invalidate();
+    }
+
+    /// Saves the name or sends the friend request typed in.
+    fn commit_typing(&mut self) {
+        let Some((field, buf)) = self.typing.take() else { return };
+        match field {
+            Field::Name => {
+                let name = crate::social::clean_name(&buf);
+                if !name.is_empty() {
+                    window::change_setting(Key::SocialName, |s| s.social_name = name);
+                }
+            }
+            Field::Code if buf.trim().is_empty() => {}
+            Field::Code => match crate::social::clean_code(&buf) {
+                Some(c) => {
+                    crate::social::add(&c);
+                    self.note = Some((format!("Request sent to {c}"), Instant::now()));
+                }
+                None => self.note = Some(("Friend codes look like FUZ-A4G7B9".into(), Instant::now())),
+            },
+        }
+        self.invalidate();
+    }
+
     fn on_down(&mut self, lp: LPARAM) {
         let (x, y) = self.logical(lp);
+        // Clicking anywhere but the box being typed in (or Send) finishes typing.
+        if let Some(field) = self.typing.as_ref().map(|t| t.0) {
+            let hit = self.hit_at(x, y).map(|i| self.hits[i].1);
+            if hit != Some(Act::Focus(field)) && hit != Some(Act::SendRequest) {
+                self.commit_typing();
+            }
+        }
         let Some(i) = self.hit_at(x, y) else { return };
         let (r, act) = self.hits[i];
         let current = window::settings_snapshot();
@@ -1907,6 +2101,51 @@ impl SettingsWindow {
                 });
             }
             Act::OpenFolder => window::open_data_folder(),
+            Act::Focus(f) => {
+                if self.typing.as_ref().map(|t| t.0) != Some(f) {
+                    let start = match f {
+                        Field::Name => current.as_ref().map(|c| c.social_name.clone()).unwrap_or_default(),
+                        Field::Code => String::new(),
+                    };
+                    self.typing = Some((f, start));
+                }
+                self.invalidate();
+            }
+            Act::CopyCode => {
+                let code = crate::social::snapshot().code;
+                if !code.is_empty() {
+                    clipboard::set_text(self.hwnd, &code);
+                    self.note = Some((format!("Copied {code}: send it to a friend"), Instant::now()));
+                }
+            }
+            Act::SendRequest => {
+                if self.typing.as_ref().map(|t| t.0) == Some(Field::Code) {
+                    self.commit_typing();
+                } else {
+                    self.note = Some(("Type your friend's code in the box first".into(), Instant::now()));
+                    self.invalidate();
+                }
+            }
+            Act::Accept(i) => {
+                if let Some((c, _)) = crate::social::snapshot().incoming.get(i) {
+                    crate::social::accept(c);
+                }
+            }
+            Act::Decline(i) => {
+                if let Some((c, _)) = crate::social::snapshot().incoming.get(i) {
+                    crate::social::decline(c);
+                }
+            }
+            Act::Cancel(i) => {
+                if let Some((c, _)) = crate::social::snapshot().outgoing.get(i) {
+                    crate::social::decline(c);
+                }
+            }
+            Act::Remove(i) => {
+                if let Some(f) = crate::social::snapshot().friends.get(i) {
+                    crate::social::remove(&f.code);
+                }
+            }
             Act::CheckUpdate => crate::updater::check_now(),
             Act::InstallUpdate => crate::updater::install_now(),
             Act::ToggleYears => self.years_open = !self.years_open,
@@ -1991,7 +2230,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_TIMER => with_win(|w| match wp.0 {
             TIMER_BLINK => w.on_blink_timer(),
             TIMER_EYES => w.on_eyes_timer(),
-            _ if w.page == PAGE_STATS || w.page == PAGE_UPDATES => w.invalidate(),
+            _ if w.page == PAGE_STATS || w.page == PAGE_UPDATES || w.page == PAGE_SOCIAL => w.invalidate(),
             _ => {}
         })
         .map(|_| LRESULT(0)),
@@ -2012,6 +2251,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         .map(|_| LRESULT(0)),
         WM_NCHITTEST => with_win(|w| w.hit_test(lp)),
         WM_LBUTTONDOWN => with_win(|w| w.on_down(lp)).map(|_| LRESULT(0)),
+        windows::Win32::UI::WindowsAndMessaging::WM_CHAR => with_win(|w| w.on_char(wp.0 as u32)).map(|_| LRESULT(0)),
         WM_MOUSEMOVE => with_win(|w| w.on_move(lp)).map(|_| LRESULT(0)),
         WM_LBUTTONUP => with_win(|w| {
             if w.dragging.take().is_some() {

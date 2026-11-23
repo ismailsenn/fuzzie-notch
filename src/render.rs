@@ -133,6 +133,9 @@ pub enum Hit {
     LyricLine(usize),
     AddFriend,
     Requests,
+    /// Poke the n-th friend on the friends page / listen along with them.
+    Poke(usize),
+    Along(usize),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -183,6 +186,9 @@ pub struct Scene<'a> {
     pub lyric_scroll: f32,
     /// The notch is on the lower half of the screen (the gradient runs upwards).
     pub low: bool,
+    /// Friends, sorted as the friends page shows them.
+    pub social: &'a crate::social::State,
+    pub social_on: bool,
     /// 0 = two columns (lyrics on the right), 1 = wide music layout (lyrics off).
     pub wide: f32,
     /// Volume 0..1 and mute of the app playing the media; None when it has no
@@ -1367,11 +1373,14 @@ impl Renderer {
         let tr = D2D_RECT_F { left: lx, top: 42.0, right: lx + 200.0, bottom: 66.0 };
         self.text("Friends", &self.f.section, tr, self.fg(), a)?;
         let cw = self.measure("Friends", &self.f.section);
-        self.text("0/50", &self.f.small, D2D_RECT_F { left: lx + cw + 8.0, ..tr }, self.dim(), a)?;
+        let so = s.social;
+        self.text(&format!("{}/50", so.friends.len()), &self.f.small, D2D_RECT_F { left: lx + cw + 8.0, ..tr }, self.dim(), a)?;
 
+        let req_label = if so.incoming.is_empty() { "Requests".to_string() } else { format!("Requests {}", so.incoming.len()) };
         let add = D2D_RECT_F { left: right - 76.0, top: 42.0, right, bottom: 66.0 };
-        let req = D2D_RECT_F { left: add.left - 106.0, top: 42.0, right: add.left - 8.0, bottom: 66.0 };
-        for (r, icon, label, hit) in [(req, "\u{EB52}", "Requests", Hit::Requests), (add, "\u{E710}", "Add", Hit::AddFriend)] {
+        let rw = 40.0 + self.measure(&req_label, &self.f.pill);
+        let req = D2D_RECT_F { left: add.left - 8.0 - rw, top: 42.0, right: add.left - 8.0, bottom: 66.0 };
+        for (r, icon, label, hit) in [(req, "\u{EB52}", req_label.as_str(), Hit::Requests), (add, "\u{E710}", "Add", Hit::AddFriend)] {
             let hot = s.hv(hit);
             unsafe {
                 let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 12.0, radiusY: 12.0 };
@@ -1384,16 +1393,88 @@ impl Renderer {
             hits.push((r, hit));
         }
 
+        if !so.friends.is_empty() && s.social_on {
+            return self.friend_rows(s, lx, right, a, hits);
+        }
         let card = D2D_RECT_F { left: lx, top: 78.0, right, bottom: 186.0 };
         unsafe {
             let rr = D2D1_ROUNDED_RECT { rect: card, radiusX: 14.0, radiusY: 14.0 };
             self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), 0.04 * a)?);
         }
         self.mascot(s, (card.left + card.right) / 2.0, card.top + 34.0, 34.0, a)?;
+        use crate::social::Conn;
+        let code_line;
+        let (l1, l2) = if !s.social_on {
+            ("Friends are off", "Turn them on in Settings \u{2192} Social")
+        } else if so.conn == Conn::Online && !so.code.is_empty() {
+            code_line = format!("Your code: {}  \u{00B7}  tap Add for theirs", so.code);
+            ("No friends yet", code_line.as_str())
+        } else if so.conn == Conn::Retrying {
+            ("Can't reach the Fuzzie server", "Trying again in a moment")
+        } else {
+            ("Connecting\u{2026}", "")
+        };
         let t1 = D2D_RECT_F { left: card.left, top: card.top + 56.0, right: card.right, bottom: card.top + 76.0 };
-        self.text("No friends yet", &self.f.pill, t1, self.fg(), a)?;
+        self.text(l1, &self.f.pill, t1, self.fg(), a)?;
         let t2 = D2D_RECT_F { top: t1.bottom, bottom: t1.bottom + 20.0, ..t1 };
-        self.text("Friends arrive once the Fuzzie server is online", &self.f.small_center, t2, self.dim(), a)?;
+        self.text(l2, &self.f.small_center, t2, self.dim(), a)?;
+        Ok(())
+    }
+
+    /// Up to three friends: their Fuzzie, name, what they play, Poke / Listen.
+    fn friend_rows(&self, s: &Scene, lx: f32, right: f32, a: f32, hits: &mut Hits) -> Result<()> {
+        let so = s.social;
+        const ROW: f32 = 42.0;
+        let shown = so.friends.len().min(3);
+        for (i, f) in so.friends.iter().take(shown).enumerate() {
+            let top = 74.0 + i as f32 * ROW;
+            let cy = top + ROW / 2.0;
+            let row = D2D_RECT_F { left: lx, top: top + 2.0, right, bottom: top + ROW - 2.0 };
+            unsafe {
+                let rr = D2D1_ROUNDED_RECT { rect: row, radiusX: 12.0, radiusY: 12.0 };
+                self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), 0.04 * a)?);
+            }
+            let fa = if f.online { a } else { a * 0.45 };
+            mascot::draw_still(&self.rt, &self.factory, f.skin, f.acc, lx + 22.0, cy + 1.0, 17.0, fa, !f.online, 0.0)?;
+            if f.online {
+                unsafe {
+                    let e = D2D1_ELLIPSE { point: Vector2 { X: lx + 34.0, Y: cy + 10.0 }, radiusX: 3.5, radiusY: 3.5 };
+                    self.rt.FillEllipse(&e, &self.brush([0.25, 0.85, 0.45], a)?);
+                }
+            }
+            // Buttons from the right.
+            let mut bx = right - 8.0;
+            let mut button = |label: &str, hit: Hit, on: bool| -> Result<()> {
+                let bw = 22.0 + self.measure(label, &self.f.pill);
+                let r = D2D_RECT_F { left: bx - bw, top: cy - 12.0, right: bx, bottom: cy + 12.0 };
+                let hot = s.hv(hit);
+                let (c, k) = if on { (s.theme.accent, 0.55 + 0.2 * hot) } else { (self.fg(), 0.1 + 0.07 * hot) };
+                unsafe {
+                    let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 12.0, radiusY: 12.0 };
+                    self.rt.FillRoundedRectangle(&rr, &self.brush(c, k * a)?);
+                }
+                self.text(label, &self.f.pill, r, self.fg(), a)?;
+                hits.push((r, hit));
+                bx = r.left - 6.0;
+                Ok(())
+            };
+            if f.online {
+                button("Poke", Hit::Poke(i), false)?;
+                if f.np.is_some() {
+                    let along = so.along.as_deref() == Some(f.code.as_str());
+                    button(if along { "Listening" } else { "Listen" }, Hit::Along(i), along)?;
+                }
+            }
+            let text_l = lx + 46.0;
+            let sub = match (&f.np, f.online) {
+                (Some(t), true) if t.artist.is_empty() => format!("\u{266A} {}", t.title),
+                (Some(t), true) => format!("\u{266A} {} \u{2014} {}", t.title, t.artist),
+                (None, true) => "Online".to_string(),
+                _ => "Offline".to_string(),
+            };
+            self.text(&f.name, &self.f.body, D2D_RECT_F { left: text_l, top: cy - 18.0, right: bx - 4.0, bottom: cy + 1.0 }, self.fg(), fa)?;
+            self.text(&sub, &self.f.small, D2D_RECT_F { left: text_l, top: cy + 1.0, right: bx - 4.0, bottom: cy + 16.0 }, self.dim(), fa)?;
+        }
         Ok(())
     }
 
@@ -1607,8 +1688,12 @@ impl Renderer {
                     let e = D2D1_ELLIPSE { point: Vector2 { X: cx, Y: cy }, radiusX: r, radiusY: r };
                     self.rt.FillEllipse(&e, &self.brush(accent, 0.22 * a)?);
                 }
-                let bell = D2D_RECT_F { left: cx - r, top: cy - r, right: cx + r, bottom: cy + r };
-                self.text("\u{EA8F}", &self.f.icons_small, bell, accent, a)?;
+                if let Some((skin, acc)) = n.fox {
+                    mascot::draw_still(&self.rt, &self.factory, skin, acc, cx, cy + 1.0, 22.0, a, false, 0.0)?;
+                } else {
+                    let bell = D2D_RECT_F { left: cx - r, top: cy - r, right: cx + r, bottom: cy + r };
+                    self.text("\u{EA8F}", &self.f.icons_small, bell, accent, a)?;
+                }
                 let (left, right) = (x0 + 58.0, x0 + w - 20.0);
                 let lines: [(&str, &IDWriteTextFormat, [f32; 3], f32); 3] = [(&n.app, &self.f.small, self.dim(), 15.0), (&n.title, &self.f.body, self.fg(), 19.0), (&n.body, &self.f.small, self.dim(), 16.0)];
                 let shown: Vec<_> = lines.iter().filter(|l| !l.0.is_empty()).collect();

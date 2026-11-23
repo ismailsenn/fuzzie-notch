@@ -16,6 +16,7 @@ mod render;
 mod settings;
 mod settings_win;
 mod shelf;
+mod social;
 mod stats;
 mod tray;
 mod updater;

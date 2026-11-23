@@ -135,6 +135,11 @@ fn today() -> (i32, i64) {
     (t.wYear as i32, day_number(t.wYear as i32, t.wMonth as u32, t.wDay as u32))
 }
 
+/// The year on this PC's clock.
+pub fn current_year() -> i32 {
+    today().0
+}
+
 /// Counts today toward the streak (call at start and now and then).
 pub fn touch_day() {
     let (_, day) = today();

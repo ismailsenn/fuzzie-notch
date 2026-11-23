@@ -1,3 +1,6 @@
 /target
 /dist
 *.pdb
+
+/server/node_modules
+/server/.wrangler

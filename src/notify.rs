@@ -18,6 +18,8 @@ pub struct Notice {
     pub app: String,
     pub title: String,
     pub body: String,
+    /// A friend's Fuzzie (skin, accessory) shown instead of the bell.
+    pub fox: Option<(usize, usize)>,
 }
 
 pub type Queue = Arc<Mutex<VecDeque<Notice>>>;
@@ -200,7 +202,7 @@ fn parse(handler: &str, xml: &str) -> Option<Notice> {
     let mut it = texts.into_iter();
     let title = it.next()?;
     let body: Vec<String> = it.collect();
-    Some(Notice { app: app_name(handler), title, body: body.join(" \u{00B7} ") })
+    Some(Notice { app: app_name(handler), title, body: body.join(" \u{00B7} "), fox: None })
 }
 
 fn unescape(s: &str) -> String {

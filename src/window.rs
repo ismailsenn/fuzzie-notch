@@ -139,6 +139,10 @@ struct App {
     last_poll: Instant,
     stats_saved: Instant,
     started: Instant,
+    /// Listening along: the friend's track we last opened, and the one we
+    /// already jumped to their position in.
+    along_opened: String,
+    along_synced: String,
 }
 
 thread_local! {
@@ -255,6 +259,8 @@ pub fn run(settings: Settings) -> Result<()> {
             last_poll: Instant::now(),
             stats_saved: Instant::now(),
             started: Instant::now(),
+            along_opened: String::new(),
+            along_synced: String::new(),
         };
         app.redraw();
         APP.with(|a| *a.borrow_mut() = Some(app));
@@ -267,10 +273,13 @@ pub fn run(settings: Settings) -> Result<()> {
             crate::updater::set_enabled(a.settings.auto_update);
             if !std::env::args().any(|x| x == "--snapshot") {
                 crate::updater::start(a.hwnd);
+                social_sync(&a.settings);
+                crate::social::start(a.notices.clone());
             }
         });
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         if std::env::args().any(|a| a == "--snapshot") {
+            crate::social::demo();
             SetTimer(Some(hwnd), TIMER_SNAPSHOT, 5000, None);
         }
         // `--settings [page] [scroll] [years]` opens the settings window (for testing).
@@ -462,6 +471,7 @@ impl App {
         let t_start = Instant::now();
         self.tick();
         let media = self.media.lock().unwrap().clone();
+        let social = crate::social::snapshot();
         let position_ms = media.position_ms();
         // Show each line slightly early so it does not lag the singer.
         let at = position_ms + 250;
@@ -503,6 +513,8 @@ impl App {
             lyrics_mode: self.lyrics_mode,
             lyric_scroll: self.lyric_scroll_pos,
             low: self.lower_half(),
+            social: &social,
+            social_on: self.settings.social_on,
             wide: self.wide,
             volume: self.audio.as_ref().and_then(|a| a.app_state()),
             vol_open: self.vol_open,
@@ -575,7 +587,7 @@ impl App {
         self.anim = 0.0;
         save(self, "closed.png");
         // A notification in the collapsed notch.
-        self.hud = Some(Hud::Notice(crate::notify::Notice { app: "Discord".into(), title: "Ada Lovelace".into(), body: "Are we still on for tonight? I'll bring the notes.".into() }));
+        self.hud = Some(Hud::Notice(crate::notify::Notice { app: "Discord".into(), title: "Ada Lovelace".into(), body: "Are we still on for tonight? I'll bring the notes.".into(), fox: None }));
         self.hud_until = Some(Instant::now() + Duration::from_secs(60));
         self.hud_anim = 1.0;
         save(self, "notice.png");
@@ -698,6 +710,38 @@ impl App {
         }
     }
 
+    /// Shares what plays, follows a friend we listen along with, and says
+    /// whether the friends page needs redrawing.
+    fn social_tick(&mut self) -> bool {
+        let changed = crate::social::take_changed();
+        let (np, mine, my_pos, playing) = {
+            let m = self.media.lock().unwrap();
+            let np = (m.available && !m.title.is_empty()).then(|| (m.title.clone(), m.artist.clone(), m.playing, m.position_ms(), m.duration_ms));
+            (np, m.key(), m.position_ms(), m.playing)
+        };
+        crate::social::set_playing(np);
+        if let Some(t) = crate::social::along_friend().and_then(|f| f.np) {
+            let key = t.key();
+            if key != mine {
+                if self.along_opened != key {
+                    self.along_opened = key;
+                    self.along_synced.clear();
+                    open_in_spotify(&t.artist, &t.title);
+                }
+            } else if self.along_synced != key && playing {
+                self.along_synced = key;
+                let want = t.position_ms();
+                if (want as i64 - my_pos as i64).abs() > 3000 {
+                    let _ = self.media_tx.send(Cmd::Seek(want));
+                }
+            }
+        } else if !self.along_opened.is_empty() {
+            self.along_opened.clear();
+            self.along_synced.clear();
+        }
+        changed && self.page == crate::render::PAGE_FRIENDS
+    }
+
     /// Every 100 ms: HUD sources, HUD expiry, hover, and live redraws while music plays.
     fn on_poll(&mut self) {
         let mut redraw = false;
@@ -718,6 +762,7 @@ impl App {
             self.start_anim();
         }
         self.show_notices();
+        redraw |= self.social_tick();
         self.poll_hover();
         if self.anim > 0.0 && self.page == 0 {
             let (id, name) = {
@@ -991,7 +1036,18 @@ impl App {
                     self.lyric_scrolled_at = None;
                 }
             }
-            Hit::VolumeBar | Hit::ClipList | Hit::LyricList | Hit::AddFriend | Hit::Requests => {}
+            Hit::AddFriend | Hit::Requests => crate::settings_win::open_at(8, 0.0, false, 0),
+            Hit::Poke(i) => {
+                if let Some(f) = crate::social::snapshot().friends.get(i) {
+                    crate::social::poke(&f.code);
+                }
+            }
+            Hit::Along(i) => {
+                if let Some(f) = crate::social::snapshot().friends.get(i) {
+                    crate::social::toggle_along(&f.code);
+                }
+            }
+            Hit::VolumeBar | Hit::ClipList | Hit::LyricList => {}
         }
         self.redraw();
         false
@@ -1197,8 +1253,35 @@ pub fn change_setting(key: Key, f: impl FnOnce(&mut Settings)) {
         }
         deskfox::sync(&a.settings);
         crate::updater::set_enabled(a.settings.auto_update);
+        if !std::env::args().any(|x| x == "--snapshot") {
+            social_sync(&a.settings);
+        }
         a.redraw();
     });
+}
+
+/// Opens the friend's song in Spotify (the app if installed, else the web).
+fn open_in_spotify(artist: &str, title: &str) {
+    let q: String = format!("{artist} {title}").chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    let enc: String = q
+        .bytes()
+        .map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect();
+    let app = HSTRING::from(format!("spotify:search:{enc}"));
+    let web = HSTRING::from(format!("https://open.spotify.com/search/{enc}"));
+    unsafe {
+        // ShellExecute returns a value > 32 on success.
+        if ShellExecuteW(None, w!("open"), &app, None, None, SW_SHOWNORMAL).0 as isize <= 32 {
+            ShellExecuteW(None, w!("open"), &web, None, None, SW_SHOWNORMAL);
+        }
+    }
+}
+
+/// Tells the friends connection who we are and whether to be online.
+fn social_sync(s: &Settings) {
+    let name = if s.social_name.trim().is_empty() { "Fuzzie" } else { s.social_name.as_str() };
+    crate::social::set_profile(name, s.skin, s.acc, s.share_music);
+    crate::social::set_enabled(s.social_on);
 }
 
 /// Remembers where the desktop fox was dragged to.

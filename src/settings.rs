@@ -139,6 +139,12 @@ pub struct Settings {
     pub hud_wifi: bool,
     pub show_notifications: bool,
     pub show_message_preview: bool,
+    /// Connected to Fuzzie friends.
+    pub social_on: bool,
+    /// Friends see the song playing here.
+    pub share_music: bool,
+    /// Name friends see ("" = "Fuzzie").
+    pub social_name: String,
 }
 
 impl Default for Settings {
@@ -183,6 +189,9 @@ impl Default for Settings {
             desk_nap: true,
             desk_anim: false,
             desk_lock: false,
+            social_on: true,
+            share_music: true,
+            social_name: String::new(),
             desk_glow: true,
             desk_acc: true,
             desk_on_taskbar: true,
