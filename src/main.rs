@@ -21,6 +21,7 @@ mod stats;
 mod tray;
 mod updater;
 mod window;
+mod wipe;
 
 use windows::core::{w, Result};
 use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
@@ -59,5 +60,7 @@ fn main() -> Result<()> {
         // Refresh the registry entry in case the exe moved.
         autostart::set(true);
     }
-    window::run(settings)
+    let r = window::run(settings);
+    wipe::finish();
+    r
 }

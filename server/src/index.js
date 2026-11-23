@@ -6,6 +6,7 @@
 // HTTP
 //   POST /register  {name}          -> {code, key}   (new account)
 //   GET  /ws        Authorization: Bearer CODE:KEY  (WebSocket upgrade)
+//   POST /delete    Authorization: Bearer CODE:KEY  (removes the account and its friendships)
 //
 // Client -> relay (JSON text frames; "ping" is answered with "pong")
 //   {t:"hello", name, skin, acc}
@@ -36,7 +37,7 @@ export default {
     if (url.pathname === "/") {
       return new Response("Fuzzie relay\n", { headers: { "content-type": "text/plain" } });
     }
-    if (url.pathname !== "/register" && url.pathname !== "/ws") {
+    if (url.pathname !== "/register" && url.pathname !== "/ws" && url.pathname !== "/delete") {
       return new Response("Not found\n", { status: 404 });
     }
     const hub = env.HUB.get(env.HUB.idFromName("hub"));
@@ -76,6 +77,7 @@ export class Hub extends DurableObject {
     const url = new URL(req.url);
     if (url.pathname === "/register" && req.method === "POST") return this.register(req);
     if (url.pathname === "/ws") return this.connect(req);
+    if (url.pathname === "/delete" && req.method === "POST") return this.deleteAccount(req);
     return new Response("Not found\n", { status: 404 });
   }
 
@@ -97,12 +99,35 @@ export class Hub extends DurableObject {
     return json({ error: "Try again" }, 503);
   }
 
-  async connect(req) {
-    if (req.headers.get("Upgrade") !== "websocket") return new Response("Expected a WebSocket\n", { status: 426 });
+  /// The account named by the Authorization header, if its key matches.
+  async authed(req) {
     const auth = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
     const [code, key] = auth.split(":");
     const u = code && key ? this.user(code) : null;
-    if (!u || u.key_hash !== (await sha256(key))) return new Response("Unknown account\n", { status: 401 });
+    return u && u.key_hash === (await sha256(key)) ? u : null;
+  }
+
+  async deleteAccount(req) {
+    const u = await this.authed(req);
+    if (!u) return new Response("Unknown account\n", { status: 401 });
+    const friends = this.sql.exec("SELECT b FROM links WHERE a = ? UNION SELECT a FROM links WHERE b = ?", u.code, u.code).toArray().map((r) => r.b);
+    this.sql.exec("DELETE FROM links WHERE a = ? OR b = ?", u.code, u.code);
+    this.sql.exec("DELETE FROM users WHERE code = ?", u.code);
+    for (const s of this.sockets(u.code)) {
+      s.serializeAttachment(null);
+      try {
+        s.close(1000, "deleted");
+      } catch {}
+    }
+    for (const f of friends) this.sendState(f);
+    return json({ ok: true });
+  }
+
+  async connect(req) {
+    if (req.headers.get("Upgrade") !== "websocket") return new Response("Expected a WebSocket\n", { status: 426 });
+    const u = await this.authed(req);
+    if (!u) return new Response("Unknown account\n", { status: 401 });
+    const code = u.code;
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);

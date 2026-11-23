@@ -468,6 +468,8 @@ enum Act {
     Remove(usize),
     CheckUpdate,
     InstallUpdate,
+    DeleteData,
+    Uninstall,
     ToggleYears,
 }
 
@@ -513,6 +515,8 @@ pub struct SettingsWindow {
     hover: Vec<(Act, f32)>,
     /// The button just pressed and its feedback left (1 → 0).
     flash: Option<(Act, f32)>,
+    /// A dangerous button clicked once, waiting for the second click.
+    confirm: Option<(Act, Instant)>,
     /// The text box being typed in and its text.
     typing: Option<(Field, String)>,
     /// A short message under "Add a friend" and when it was set.
@@ -717,6 +721,7 @@ impl SettingsWindow {
                 flash: None,
                 typing: None,
                 note: None,
+                confirm: None,
                 accent_now: [0.78, 0.0, 0.94],
                 toggles: Vec::new(),
                 choices: Vec::new(),
@@ -888,6 +893,12 @@ impl SettingsWindow {
                 Row("Version", env!("CARGO_PKG_VERSION").to_string()),
                 t("A desktop notch for Windows: music, lyrics, shelf, clipboard and a fox."),
                 Button("Open data folder", Act::OpenFolder, 190.0),
+                Section("YOUR DATA"),
+                t("Settings, stats, the shelf, clipboard history and your friends account."),
+                Button(if self.armed(Act::DeleteData) { "Click again to delete" } else { "Delete all my data" }, Act::DeleteData, 230.0),
+                t("Fuzzie starts again as if new. This cannot be undone."),
+                Button(if self.armed(Act::Uninstall) { "Click again to uninstall" } else { "Uninstall Fuzzie" }, Act::Uninstall, 230.0),
+                t("Deletes all your data, stops starting with Windows and removes Fuzzie.exe."),
             ],
         }
     }
@@ -1878,6 +1889,11 @@ impl SettingsWindow {
         }
     }
 
+    /// A dangerous button clicked once in the last 5 seconds.
+    fn armed(&self, act: Act) -> bool {
+        self.confirm.is_some_and(|(a, t)| a == act && t.elapsed() < std::time::Duration::from_secs(5))
+    }
+
     /// The Social page.
     fn social_items(&self) -> Vec<Item> {
         use crate::social::Conn;
@@ -2146,6 +2162,19 @@ impl SettingsWindow {
                     crate::social::remove(&f.code);
                 }
             }
+            Act::DeleteData | Act::Uninstall => {
+                if self.armed(act) {
+                    self.confirm = None;
+                    if act == Act::DeleteData {
+                        crate::wipe::delete_data();
+                    } else {
+                        crate::wipe::uninstall();
+                    }
+                } else {
+                    self.confirm = Some((act, Instant::now()));
+                    self.invalidate();
+                }
+            }
             Act::CheckUpdate => crate::updater::check_now(),
             Act::InstallUpdate => crate::updater::install_now(),
             Act::ToggleYears => self.years_open = !self.years_open,
@@ -2230,7 +2259,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_TIMER => with_win(|w| match wp.0 {
             TIMER_BLINK => w.on_blink_timer(),
             TIMER_EYES => w.on_eyes_timer(),
-            _ if w.page == PAGE_STATS || w.page == PAGE_UPDATES || w.page == PAGE_SOCIAL => w.invalidate(),
+            _ if w.page == PAGE_STATS || w.page == PAGE_UPDATES || w.page == PAGE_SOCIAL || w.confirm.is_some() => w.invalidate(),
             _ => {}
         })
         .map(|_| LRESULT(0)),

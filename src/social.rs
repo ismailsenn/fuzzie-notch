@@ -394,6 +394,27 @@ fn open(id: &Identity, tx_in: Sender<String>, closed: Arc<AtomicBool>) -> Option
     Some((ws, writer))
 }
 
+/// Removes this PC's friends account from the relay (best effort, a few seconds at most).
+pub fn delete_account() {
+    let Some(id) = std::fs::read(id_path()).ok().and_then(|b| serde_json::from_slice::<Identity>(&b).ok()) else { return };
+    let url = format!("{}/delete", relay());
+    let (tx, rx) = channel();
+    let _ = std::thread::Builder::new().stack_size(256 * 1024).spawn(move || {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let ok = (|| -> Option<()> {
+            let client = HttpClient::new().ok()?;
+            let msg = windows::Web::Http::HttpRequestMessage::Create(&windows::Web::Http::HttpMethod::Post().ok()?, &Uri::CreateUri(&HSTRING::from(url)).ok()?).ok()?;
+            msg.Headers().ok()?.TryAppendWithoutValidation(&HSTRING::from("Authorization"), &HSTRING::from(format!("Bearer {}:{}", id.code, id.key))).ok()?;
+            client.SendRequestAsync(&msg).ok()?.join().ok()?;
+            Some(())
+        })();
+        let _ = tx.send(ok);
+    });
+    let _ = rx.recv_timeout(Duration::from_secs(6));
+}
+
 fn post(url: &str, body: &str) -> Option<String> {
     let client = HttpClient::new().ok()?;
     let content = HttpStringContent::CreateFromStringWithEncodingAndMediaType(&HSTRING::from(body), UnicodeEncoding::Utf8, &HSTRING::from("application/json")).ok()?;

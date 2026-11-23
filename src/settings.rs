@@ -150,10 +150,10 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            start_with_windows: false,
+            start_with_windows: true,
             auto_update: true,
             open_mode: OpenMode::Hover,
-            clock_24h: false,
+            clock_24h: windows_uses_24h(),
             show_seconds: false,
             scale: 1.0,
             background: "#000000".into(),
@@ -168,7 +168,7 @@ impl Default for Settings {
             clipboard_history: true,
             clipboard_max: 20,
             remember_after_restart: true,
-            hide_in_fullscreen: false,
+            hide_in_fullscreen: true,
             idle_style: IdleStyle::Clock,
             style: NotchStyle::Attached,
             placement: Placement::TopCenter,
@@ -204,9 +204,19 @@ impl Default for Settings {
             hud_brightness: true,
             hud_wifi: true,
             show_notifications: true,
-            show_message_preview: true,
+            show_message_preview: false,
         }
     }
+}
+
+/// The clock style Windows uses for this user ("HH:mm" vs "h:mm tt").
+fn windows_uses_24h() -> bool {
+    use windows::core::w;
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+    let mut buf = [0u16; 64];
+    let mut len = (buf.len() * 2) as u32;
+    let ok = unsafe { RegGetValueW(HKEY_CURRENT_USER, w!(r"Control Panel\International"), w!("sTimeFormat"), RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr().cast()), Some(&mut len)) }.is_ok();
+    ok && String::from_utf16_lossy(&buf[..(len as usize / 2).saturating_sub(1)]).contains('H')
 }
 
 pub fn data_dir() -> PathBuf {

@@ -263,6 +263,7 @@ pub fn run(settings: Settings) -> Result<()> {
             along_synced: String::new(),
         };
         app.redraw();
+        NOTCH.store(hwnd.0 as isize, std::sync::atomic::Ordering::Relaxed);
         APP.with(|a| *a.borrow_mut() = Some(app));
 
         SetTimer(Some(hwnd), TIMER_CLOCK, 1000, None);
@@ -1260,6 +1261,17 @@ pub fn change_setting(key: Key, f: impl FnOnce(&mut Settings)) {
     });
 }
 
+/// Closes Fuzzie (the notch window ends the message loop).
+pub fn quit() {
+    let hwnd = HWND(NOTCH.load(std::sync::atomic::Ordering::Relaxed) as *mut core::ffi::c_void);
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(Some(hwnd), windows::Win32::UI::WindowsAndMessaging::WM_CLOSE, WPARAM(0), LPARAM(0));
+    }
+}
+
+/// The notch window, for [`quit`] (callable from anywhere on the UI thread).
+static NOTCH: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
 /// Opens the friend's song in Spotify (the app if installed, else the web).
 fn open_in_spotify(artist: &str, title: &str) {
     let q: String = format!("{artist} {title}").chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
@@ -1563,8 +1575,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             LRESULT(0)
         }
         WM_DESTROY => {
-            with_app(|a| a.save_store());
-            stats::save();
+            if !crate::wipe::pending() {
+                with_app(|a| a.save_store());
+                stats::save();
+            }
             deskfox::close();
             tray::remove(hwnd);
             PostQuitMessage(0);
