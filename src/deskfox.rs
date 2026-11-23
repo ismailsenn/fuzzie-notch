@@ -612,7 +612,61 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
         }
     });
     close();
+    // The app icon: the default fox's head at each icon size.
+    for px in [16, 20, 24, 32, 40, 48, 64, 96, 128, 256] {
+        if let Some(png) = icon_png(px) {
+            let _ = std::fs::write(dir.join(format!("icon_{px}.png")), png);
+        }
+    }
 }
+
+/// The default fox's head, `px` square, on a clear background.
+fn icon_png(px: i32) -> Option<Vec<u8>> {
+    unsafe {
+        let (factory, rt) = crate::render::shared_target().ok()?;
+        let screen = GetDC(None);
+        let dc = CreateCompatibleDC(Some(screen));
+        ReleaseDC(None, screen);
+        let bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: px,
+                biHeight: -px,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut bits = std::ptr::null_mut();
+        let bitmap = CreateDIBSection(Some(dc), &bmi, DIB_RGB_COLORS, &mut bits, None, 0).ok()?;
+        let old = SelectObject(dc, bitmap.into());
+        crate::render::lend_target();
+        rt.SetDpi(96.0, 96.0);
+        let mut out = None;
+        if rt.BindDC(dc, &RECT { left: 0, top: 0, right: px, bottom: px }).is_ok() {
+            rt.BeginDraw();
+            rt.SetTransform(&Matrix3x2::identity());
+            rt.Clear(Some(&D2D1_COLOR_F::default()));
+            let k = px as f32;
+            let _ = mascot::draw_head(&rt, &factory, 0, k * ICON_X, k * ICON_Y, k * ICON_SIZE);
+            if rt.EndDraw(None, None).is_ok() {
+                let data = std::slice::from_raw_parts(bits as *const u8, (px * px * 4) as usize);
+                out = crate::image::encode_png(px as u32, px as u32, data);
+            }
+        }
+        SelectObject(dc, old);
+        let _ = DeleteObject(bitmap.into());
+        let _ = DeleteDC(dc);
+        out
+    }
+}
+
+/// Where the head sits in the icon square (fractions of its side).
+const ICON_X: f32 = 0.5;
+const ICON_Y: f32 = 0.55;
+const ICON_SIZE: f32 = 0.7;
 
 /// Monitors or the taskbar changed: keep the fox on a screen.
 pub fn keep_on_screen() {

@@ -566,6 +566,8 @@ struct Bongo {
     zt: f32,
     /// Draws the glows of skins and accessories.
     glow: bool,
+    /// Only the head: no tail, no paws (the app icon).
+    head_only: bool,
 }
 
 /// The fox being drawn has its glows turned off.
@@ -585,7 +587,7 @@ thread_local! {
 /// `live` keeps the skin and accessory animations running at time `t`; the
 /// "zZZ" always drifts with `t`.
 pub fn draw_bongo(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, acc: usize, cx: f32, cy: f32, size: f32, sleeping: bool, paws: [f32; 2], blink: f32, t: f32, live: bool, glow: bool) -> Result<()> {
-    BONGO.with(|c| c.set(Some(Bongo { paws: Some(paws), blink, live, zt: t, glow })));
+    BONGO.with(|c| c.set(Some(Bongo { paws: Some(paws), blink, live, zt: t, glow, head_only: false })));
     let r = draw(rt, factory, skin, acc, cx, cy, size, 1.0, sleeping, t);
     BONGO.with(|c| c.set(None));
     r
@@ -594,8 +596,16 @@ pub fn draw_bongo(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, a
 /// The fox holding still in its usual pose (paws in front), with only the
 /// eyelids set from `blink`: drawing it costs one frame, not an animation.
 #[allow(clippy::too_many_arguments)]
+/// Just the head, still, no tail or paws (the app icon).
+pub fn draw_head(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, cx: f32, cy: f32, size: f32) -> Result<()> {
+    BONGO.with(|c| c.set(Some(Bongo { paws: None, blink: 0.0, live: false, zt: 0.0, glow: true, head_only: true })));
+    let r = draw(rt, factory, skin, 0, cx, cy, size, 1.0, false, 0.0);
+    BONGO.with(|c| c.set(None));
+    r
+}
+
 pub fn draw_still(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, acc: usize, cx: f32, cy: f32, size: f32, a: f32, sleeping: bool, blink: f32) -> Result<()> {
-    BONGO.with(|c| c.set(Some(Bongo { paws: None, blink, live: false, zt: 0.0, glow: true })));
+    BONGO.with(|c| c.set(Some(Bongo { paws: None, blink, live: false, zt: 0.0, glow: true, head_only: false })));
     let r = draw(rt, factory, skin, acc, cx, cy, size, a, sleeping, 0.0);
     BONGO.with(|c| c.set(None));
     r
@@ -913,7 +923,8 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
         Some(b) if !b.live => 0.0,
         _ => t,
     };
-    let tiny = size < 30.0;
+    let head_only = bongo.is_some_and(|b| b.head_only);
+    let tiny = size < 30.0 || head_only;
     let body = Matrix3x2::identity();
     let breathe = (t * if sleeping { 1.3 } else { 2.1 }).sin();
     let bob = breathe * if sleeping { 0.022 } else { 0.014 };
@@ -980,7 +991,8 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
 
     // Paws resting in front, Bongo style.
     let paw = mix(sk.fur, sk.cream, 0.35);
-    if let Some(Bongo { paws: Some(down), .. }) = bongo {
+    if head_only {
+    } else if let Some(Bongo { paws: Some(down), .. }) = bongo {
         // Raised beside the cheeks, showing their beans; a tap brings one down on the desk.
         for (i, side) in [-1.0f32, 1.0].into_iter().enumerate() {
             let d = down[i];
