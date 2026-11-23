@@ -1,0 +1,33 @@
+name: Release
+
+# Push a tag like v0.2.0 (matching the version in Cargo.toml) to build
+# Fuzzie.exe and publish it; installed copies update themselves from it.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches Cargo.toml
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match Cargo.toml version $v" }
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Copy-Item target\release\fuzzie.exe Fuzzie.exe
+          gh release create "${{ github.ref_name }}" Fuzzie.exe --title "Fuzzie ${{ github.ref_name }}" --generate-notes
