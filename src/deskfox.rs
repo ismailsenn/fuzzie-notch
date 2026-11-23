@@ -614,14 +614,24 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
     close();
     // The app icon: the default fox's head at each icon size.
     for px in [16, 20, 24, 32, 40, 48, 64, 96, 128, 256] {
-        if let Some(png) = icon_png(px) {
+        let k = px as f32;
+        if let Some(png) = fox_png(px, |rt, f| mascot::draw_head(rt, f, 0, k * ICON_X, k * ICON_Y, k * ICON_SIZE)) {
             let _ = std::fs::write(dir.join(format!("icon_{px}.png")), png);
+        }
+    }
+    // A gallery of looks for the web page: whole foxes, skin + accessory.
+    let looks = [(0, 0), (1, 22), (3, 9), (4, 4), (5, 24), (6, 7), (8, 13), (9, 17), (10, 25), (11, 5), (14, 8), (16, 16), (19, 6), (21, 19), (25, 15), (27, 18), (29, 21), (31, 20), (36, 11), (38, 3), (45, 14), (23, 26)];
+    for (skin, acc) in looks {
+        let px = 220;
+        let k = px as f32;
+        if let Some(png) = fox_png(px, |rt, f| mascot::draw_still(rt, f, skin, acc, k * 0.5, k * 0.56, k * 0.42, 1.0, false, 0.0)) {
+            let _ = std::fs::write(dir.join(format!("fox_{skin}_{acc}.png")), png);
         }
     }
 }
 
-/// The default fox's head, `px` square, on a clear background.
-fn icon_png(px: i32) -> Option<Vec<u8>> {
+/// Draws with `paint` into a `px` square on a clear background, as PNG.
+fn fox_png(px: i32, paint: impl FnOnce(&windows::Win32::Graphics::Direct2D::ID2D1RenderTarget, &ID2D1Factory) -> windows::core::Result<()>) -> Option<Vec<u8>> {
     unsafe {
         let (factory, rt) = crate::render::shared_target().ok()?;
         let screen = GetDC(None);
@@ -649,8 +659,7 @@ fn icon_png(px: i32) -> Option<Vec<u8>> {
             rt.BeginDraw();
             rt.SetTransform(&Matrix3x2::identity());
             rt.Clear(Some(&D2D1_COLOR_F::default()));
-            let k = px as f32;
-            let _ = mascot::draw_head(&rt, &factory, 0, k * ICON_X, k * ICON_Y, k * ICON_SIZE);
+            let _ = paint(&rt, &factory);
             if rt.EndDraw(None, None).is_ok() {
                 let data = std::slice::from_raw_parts(bits as *const u8, (px * px * 4) as usize);
                 out = crate::image::encode_png(px as u32, px as u32, data);
