@@ -18,7 +18,7 @@ use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_APP};
 
 /// Where releases are published.
-const REPO: &str = "ismailsenn/Fuzzie";
+const REPO: &str = "ismailsenn/fuzzie-notch";
 /// The release asset that is the app itself.
 const ASSET: &str = "Fuzzie.exe";
 /// Check soon after start, then often enough that a new release reaches

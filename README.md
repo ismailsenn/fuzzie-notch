@@ -10,7 +10,7 @@ A small, fast desktop notch for Windows, written in Rust with Direct2D.
 
 ## Download
 
-See it on the [Fuzzie page](https://ismailsenn.github.io/Fuzzie/), or grab `Fuzzie.exe` from the [latest release](https://github.com/ismailsenn/Fuzzie/releases/latest). It keeps itself up to date from this repository's releases; turn that off in Settings → General → "Update automatically".
+See it on the [Fuzzie page](https://ismailsenn.github.io/fuzzie-notch/), or grab `Fuzzie.exe` from the [latest release](https://github.com/ismailsenn/fuzzie-notch/releases/latest). It keeps itself up to date from this repository's releases; turn that off in Settings → General → "Update automatically".
 
 ## Build
 

@@ -252,7 +252,7 @@
       <a href="#looks">Looks</a>
       <a href="#friends">Friends</a>
       <a href="#install">Install</a>
-      <a class="gh" href="https://github.com/ismailsenn/Fuzzie">GitHub</a>
+      <a class="gh" href="https://github.com/ismailsenn/fuzzie-notch">GitHub</a>
     </nav>
   </header>
 
@@ -262,11 +262,11 @@
       <h1>Meet <span>Fuzzie.</span></h1>
       <p class="lead">A little notch at the top of your screen. It shows what you're playing with synced lyrics, keeps your files and clipboard handy, brings your friends along, and has a fox that's always happy to see you.</p>
       <div class="btns">
-        <a class="btn primary" href="https://github.com/ismailsenn/Fuzzie/releases/latest/download/Fuzzie.exe">
+        <a class="btn primary" href="https://github.com/ismailsenn/fuzzie-notch/releases/latest/download/Fuzzie.exe">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
           Download for Windows
         </a>
-        <a class="btn ghost" href="https://github.com/ismailsenn/Fuzzie">
+        <a class="btn ghost" href="https://github.com/ismailsenn/fuzzie-notch">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.27 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
           Source code
         </a>
@@ -297,7 +297,7 @@
         <h3>Shelf</h3><p>Drop files on the notch, drag them out later. They stay until you clear them.</p>
       </div>
       <div class="card">
-        <div class="demo"><div class="clips"><div class="clip">https://github.com/ismailsenn/Fuzzie</div><div class="clip">Meeting moved to 3 pm</div><div class="clip">&#128247; Screenshot 2026-11-23.png</div></div></div>
+        <div class="demo"><div class="clips"><div class="clip">https://github.com/ismailsenn/fuzzie-notch</div><div class="clip">Meeting moved to 3 pm</div><div class="clip">&#128247; Screenshot 2026-11-23.png</div></div></div>
         <h3>Clipboard</h3><p>Everything you copied, text and images, one click away.</p>
       </div>
       <div class="card">
@@ -385,7 +385,7 @@
     <h2>Three steps.</h2>
     <p class="sub">No installer: Fuzzie is one small file.</p>
     <div class="steps">
-      <div class="step"><h3>Get it</h3><p>Download <a href="https://github.com/ismailsenn/Fuzzie/releases/latest/download/Fuzzie.exe">Fuzzie.exe</a> and put it anywhere you like.</p></div>
+      <div class="step"><h3>Get it</h3><p>Download <a href="https://github.com/ismailsenn/fuzzie-notch/releases/latest/download/Fuzzie.exe">Fuzzie.exe</a> and put it anywhere you like.</p></div>
       <div class="step"><h3>Run it</h3><p>Windows may warn you because the app is new: click <b>More info</b>, then <b>Run anyway</b>.</p></div>
       <div class="step"><h3>Say hi</h3><p>Fuzzie appears at the top of your screen, starts with Windows and keeps itself up to date.</p></div>
     </div>
@@ -408,13 +408,13 @@
     <img src="img/icon.png" alt="">
     <h2>Ready when you are.</h2>
     <p class="sub" style="margin:0 auto 26px">Free, tiny and fox-shaped.</p>
-    <div class="btns"><a class="btn primary" href="https://github.com/ismailsenn/Fuzzie/releases/latest/download/Fuzzie.exe">
+    <div class="btns"><a class="btn primary" href="https://github.com/ismailsenn/fuzzie-notch/releases/latest/download/Fuzzie.exe">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
       Download for Windows</a></div>
   </div>
 
   <footer>
-    Fuzzie · a tiny notch for Windows · <a href="https://github.com/ismailsenn/Fuzzie">GitHub</a> · <a href="https://github.com/ismailsenn/Fuzzie/releases">All releases</a><br>
+    Fuzzie · a tiny notch for Windows · <a href="https://github.com/ismailsenn/fuzzie-notch">GitHub</a> · <a href="https://github.com/ismailsenn/fuzzie-notch/releases">All releases</a><br>
     Song titles in the pictures are only examples; the lyrics shown are from a public-domain song.
   </footer>
 </div>
@@ -423,7 +423,7 @@
   const $ = (id) => document.getElementById(id);
 
   // Latest version and size next to the download button.
-  fetch("https://api.github.com/repos/ismailsenn/Fuzzie/releases/latest")
+  fetch("https://api.github.com/repos/ismailsenn/fuzzie-notch/releases/latest")
     .then((r) => (r.ok ? r.json() : null))
     .then((rel) => {
       if (!rel) return;
