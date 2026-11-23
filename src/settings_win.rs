@@ -69,7 +69,7 @@ const OFF: [f32; 3] = [0.29, 0.29, 0.31];
 const PINK: [f32; 3] = [1.0, 0.6, 0.76];
 
 pub const DEFAULT_BACKGROUND: &str = "#000000";
-pub const DEFAULT_ACCENT: &str = "#C902F0";
+pub const DEFAULT_ACCENT: &str = "#FF8A3D";
 
 /// Background / accent pairs offered as colour presets.
 const PRESETS: [(&str, &str); 11] = [

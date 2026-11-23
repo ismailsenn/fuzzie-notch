@@ -153,12 +153,12 @@ impl Default for Settings {
             start_with_windows: true,
             auto_update: true,
             open_mode: OpenMode::Hover,
-            clock_24h: windows_uses_24h(),
+            clock_24h: true,
             show_seconds: false,
-            scale: 1.0,
+            scale: 0.9,
             background: "#000000".into(),
             background_opacity: 0.96,
-            accent: "#C902F0".into(),
+            accent: "#FF8A3D".into(),
             show_lyrics: true,
             ghost_secs: 2.0,
             hud_volume: true,
@@ -166,7 +166,7 @@ impl Default for Settings {
             hud_audio_device: true,
             bg_style: BgStyle::Gradient,
             clipboard_history: true,
-            clipboard_max: 20,
+            clipboard_max: 50,
             remember_after_restart: true,
             hide_in_fullscreen: true,
             idle_style: IdleStyle::Clock,
@@ -179,15 +179,15 @@ impl Default for Settings {
             nap_enabled: true,
             nap_after_secs: 300,
             nap_while_music: true,
-            desk_fox: false,
+            desk_fox: true,
             desk_x: -1,
             desk_y: -1,
-            desk_scale: 1.0,
+            desk_scale: 0.5,
             desk_keys: true,
             desk_clicks: true,
             desk_blink: true,
             desk_nap: true,
-            desk_anim: false,
+            desk_anim: true,
             desk_lock: false,
             social_on: true,
             share_music: true,
@@ -195,8 +195,8 @@ impl Default for Settings {
             desk_glow: true,
             desk_acc: true,
             desk_on_taskbar: true,
-            gradient_strength: 0.35,
-            gradient_softness: 0.85,
+            gradient_strength: 0.3,
+            gradient_softness: 1.0,
             skin: 0,
             acc: 0,
             audio_visualizer: true,
@@ -204,19 +204,9 @@ impl Default for Settings {
             hud_brightness: true,
             hud_wifi: true,
             show_notifications: true,
-            show_message_preview: false,
+            show_message_preview: true,
         }
     }
-}
-
-/// The clock style Windows uses for this user ("HH:mm" vs "h:mm tt").
-fn windows_uses_24h() -> bool {
-    use windows::core::w;
-    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
-    let mut buf = [0u16; 64];
-    let mut len = (buf.len() * 2) as u32;
-    let ok = unsafe { RegGetValueW(HKEY_CURRENT_USER, w!(r"Control Panel\International"), w!("sTimeFormat"), RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr().cast()), Some(&mut len)) }.is_ok();
-    ok && String::from_utf16_lossy(&buf[..(len as usize / 2).saturating_sub(1)]).contains('H')
 }
 
 pub fn data_dir() -> PathBuf {
