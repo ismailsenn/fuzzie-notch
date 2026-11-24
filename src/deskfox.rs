@@ -56,6 +56,8 @@ const TIMER_EYES: usize = 4;
 const TIMER_ANIM: usize = 5;
 /// Ends the see-through spell of a right-click.
 const TIMER_GHOST: usize = 6;
+/// 60 FPS during active sleep/wake/yarn transitions and taps; calm 30/20 FPS when settled.
+const TRANS_MS: u32 = 16;
 const ANIM_MS: u32 = 33;
 const ZZZ_MS: u32 = 50;
 const PAW_MS: u32 = 110;
@@ -161,6 +163,7 @@ struct Desk {
     yarn_vy: f32,
     yarn_rot: f32,
     yarn_vrot: f32,
+    yarn_squash: f32,
     yarn_taps: u32,
     yarn_until: Instant,
     last_hit: Instant,
@@ -441,12 +444,13 @@ fn open(s: &Settings) -> Result<()> {
             sleep_mix: 0.0,
             yarn_mode: false,
             yarn_mix: 0.0,
-            yarn_x: 0.0,
-            yarn_y: -0.08,
+            yarn_x: 0.18,
+            yarn_y: -0.14,
             yarn_vx: 0.0,
             yarn_vy: 0.0,
             yarn_rot: 0.0,
             yarn_vrot: 0.0,
+            yarn_squash: 0.0,
             yarn_taps: 0,
             yarn_until: Instant::now(),
             last_hit: Instant::now(),
@@ -549,9 +553,10 @@ impl Desk {
         // Organic playful yarn-ball rhythm: every ~55 taps Fuzzie smoothly rolls onto its back
         // and bats a bouncing yarn ball with each tap for ~20s, then glides back to taskbar taps.
         if self.yarn_mode {
-            self.yarn_vy = -1.65;
-            self.yarn_vx = if side == 0 { 0.36 } else { -0.36 };
-            self.yarn_vrot = if side == 0 { 240.0 } else { -240.0 };
+            self.yarn_vy = -1.75;
+            self.yarn_vx = if side == 0 { 0.34 } else { -0.34 };
+            self.yarn_vrot = if side == 0 { 260.0 } else { -260.0 };
+            self.yarn_squash = 0.85;
             if now >= self.yarn_until {
                 self.yarn_mode = false;
                 self.yarn_taps = 0;
@@ -562,11 +567,12 @@ impl Desk {
                 self.yarn_mode = true;
                 self.yarn_taps = 0;
                 self.yarn_until = now + std::time::Duration::from_secs(20);
-                self.yarn_x = 0.0;
+                self.yarn_x = 0.18;
                 self.yarn_y = -0.18;
-                self.yarn_vx = if side == 0 { 0.25 } else { -0.25 };
-                self.yarn_vy = -1.35;
-                self.yarn_vrot = if side == 0 { 180.0 } else { -180.0 };
+                self.yarn_vx = if side == 0 { 0.24 } else { -0.24 };
+                self.yarn_vy = -1.45;
+                self.yarn_vrot = if side == 0 { 200.0 } else { -200.0 };
+                self.yarn_squash = 0.7;
             }
         }
 
@@ -634,32 +640,34 @@ impl Desk {
             self.yarn_mix = (self.yarn_mix - dt * 1.85).max(yarn_target);
         }
 
-        // Yarn ball bounce & spin physics while playing.
+        // Yarn ball bounce, squash & spin physics while playing (centered over reclining tummy x=0.18).
         if self.yarn_mix > 0.01 {
-            self.yarn_vy += 4.2 * dt; // soft gravity
+            self.yarn_vy += 4.3 * dt; // soft gravity
             self.yarn_x += self.yarn_vx * dt;
             self.yarn_y += self.yarn_vy * dt;
-            self.yarn_vx *= (-2.2 * dt).exp();
+            self.yarn_vx *= (-2.0 * dt).exp();
             self.yarn_rot = (self.yarn_rot + self.yarn_vrot * dt) % 360.0;
             self.yarn_vrot *= (-1.8 * dt).exp();
-            // Soft horizontal bounds above the paws.
-            if self.yarn_x < -0.26 {
-                self.yarn_x = -0.26;
-                self.yarn_vx = self.yarn_vx.abs() * 0.6;
-            } else if self.yarn_x > 0.26 {
-                self.yarn_x = 0.26;
-                self.yarn_vx = -self.yarn_vx.abs() * 0.6;
+            self.yarn_squash *= (-12.0 * dt).exp();
+            // Soft horizontal bounds right above the batting paws.
+            if self.yarn_x < 0.02 {
+                self.yarn_x = 0.02;
+                self.yarn_vx = self.yarn_vx.abs() * 0.65;
+            } else if self.yarn_x > 0.34 {
+                self.yarn_x = 0.34;
+                self.yarn_vx = -self.yarn_vx.abs() * 0.65;
             }
-            // Top ceiling so the ball stays nicely inside the mascot window.
-            if self.yarn_y < -0.68 {
-                self.yarn_y = -0.68;
+            // Top ceiling so the ball stays cleanly inside the mascot window.
+            if self.yarn_y < -0.64 {
+                self.yarn_y = -0.64;
                 self.yarn_vy = self.yarn_vy.abs() * 0.25;
             }
             // Rest / gentle bounce on the raised paws.
-            if self.yarn_y > -0.06 {
-                self.yarn_y = -0.06;
+            if self.yarn_y > -0.10 {
+                self.yarn_y = -0.10;
                 if self.yarn_vy > 0.35 {
-                    self.yarn_vy = -self.yarn_vy * 0.38;
+                    self.yarn_vy = -self.yarn_vy * 0.42;
+                    self.yarn_squash = 0.65;
                 } else {
                     self.yarn_vy = 0.0;
                 }
@@ -673,16 +681,20 @@ impl Desk {
             self.head_target = 0.0;
             self.ear_bounce = [0.0; 2];
             self.hype = 0.0;
+            self.yarn_squash = 0.0;
         }
         self.draw();
         self.update_anim();
     }
 
-    /// Runs frames while animating, settling a tap pulse, or asleep (for "zZZ"); none otherwise.
+    /// Runs at 60 FPS during active transitions (sleep/wake, yarn roll, taps), 30 FPS for calm idle,
+    /// 20 FPS for quiet "zZZ", and 0 FPS when static.
     fn update_anim(&mut self) {
         let ms = if self.hidden || self.forced.is_some() {
             0
-        } else if self.anim_on || self.settling() {
+        } else if self.settling() {
+            TRANS_MS
+        } else if self.anim_on {
             ANIM_MS
         } else if self.sleeping {
             ZZZ_MS
@@ -732,7 +744,7 @@ impl Desk {
                 hype: self.hype,
                 sleep_mix: self.sleep_mix,
                 yarn_mix: self.yarn_mix,
-                yarn_ball: [self.yarn_x, self.yarn_y, self.yarn_rot],
+                yarn_ball: [self.yarn_x, self.yarn_y, self.yarn_rot, self.yarn_squash],
             };
             let _ = mascot::draw_bongo(&self.rt, &self.factory, look, cx, cy, self.size, self.sleeping, st);
             if self.rt.EndDraw(None, None).is_err() {
@@ -810,9 +822,10 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
             d.sleep_mix = if sleeping { 1.0 } else { 0.0 };
             d.yarn_mode = yarn;
             d.yarn_mix = if yarn { 1.0 } else { 0.0 };
-            d.yarn_x = 0.06;
-            d.yarn_y = -0.34;
+            d.yarn_x = 0.18;
+            d.yarn_y = -0.28;
             d.yarn_rot = 22.0;
+            d.yarn_squash = if yarn { 0.35 } else { 0.0 };
             d.eyes_shut = blink;
             d.draw();
             let px = unsafe { std::slice::from_raw_parts(d.bits, (d.width * d.height * 4) as usize) };
@@ -820,8 +833,58 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
                 let _ = std::fs::write(dir.join(name), png);
             }
         }
+        // Full 8-frame yarn transition & juggle test sequence + all 5 species when FUZZIE_YARN_TEST=1.
+        if std::env::var_os("FUZZIE_YARN_TEST").is_some() {
+            let seq: [(&str, f32, [f32; 2], f32, f32, f32, f32); 8] = [
+                ("yarn_00.png", 0.0, [0.0, 0.0], 0.18, -0.10, 0.0, 0.0),
+                ("yarn_01.png", 0.35, [0.0, 0.0], 0.18, -0.14, 15.0, 0.0),
+                ("yarn_02.png", 0.70, [0.2, 0.0], 0.16, -0.20, 45.0, 0.2),
+                ("yarn_03.png", 1.0, [0.0, 0.0], 0.18, -0.10, 60.0, 0.45),
+                ("yarn_04.png", 1.0, [1.0, 0.0], 0.14, -0.22, 110.0, 0.75),
+                ("yarn_05.png", 1.0, [0.1, 0.0], 0.20, -0.52, 200.0, -0.25),
+                ("yarn_06.png", 1.0, [0.0, 1.0], 0.24, -0.20, 290.0, 0.75),
+                ("yarn_07.png", 1.0, [0.0, 0.1], 0.16, -0.44, 340.0, -0.20),
+            ];
+            d.sleeping = false;
+            d.sleep_mix = 0.0;
+            d.eyes_shut = false;
+            d.acc = 0;
+            for (name, ym, paws, bx, by, deg, sq) in seq {
+                d.forced = Some(paws);
+                d.yarn_mode = ym > 0.0;
+                d.yarn_mix = ym;
+                d.yarn_x = bx;
+                d.yarn_y = by;
+                d.yarn_rot = deg;
+                d.yarn_squash = sq;
+                d.draw();
+                let px = unsafe { std::slice::from_raw_parts(d.bits, (d.width * d.height * 4) as usize) };
+                if let Some(png) = crate::image::encode_png(d.width as u32, d.height as u32, px) {
+                    let _ = std::fs::write(dir.join(name), png);
+                }
+            }
+            for (sp, sk) in [(0usize, 0usize), (1, 24), (2, 1), (3, 6), (4, 19)] {
+                d.species = sp;
+                d.skin = sk;
+                d.forced = Some([0.9, 0.0]);
+                d.yarn_mode = true;
+                d.yarn_mix = 1.0;
+                d.yarn_x = 0.18;
+                d.yarn_y = -0.30;
+                d.yarn_rot = 40.0;
+                d.yarn_squash = 0.35;
+                d.draw();
+                let px = unsafe { std::slice::from_raw_parts(d.bits, (d.width * d.height * 4) as usize) };
+                if let Some(png) = crate::image::encode_png(d.width as u32, d.height as u32, px) {
+                    let _ = std::fs::write(dir.join(format!("yarn_sp_{sp}.png")), png);
+                }
+            }
+            d.species = s.species;
+            d.skin = s.skin;
+        }
         d.yarn_mode = false;
         d.yarn_mix = 0.0;
+        d.yarn_squash = 0.0;
         d.sleep_mix = 0.0;
         // The shinobi pack: every skin bare, then every accessory on one of them.
         let pack = &crate::mascot::PACKS[1];
@@ -842,10 +905,10 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
         }
     });
     close();
-    // The app icon: the default fox's head at each icon size.
+    // The app icon: the full default Fluffy Fox (ears, paws & white-tipped tail) tightly framed.
     for px in [16, 20, 24, 32, 40, 48, 64, 96, 128, 256] {
         let k = px as f32;
-        if let Some(png) = fox_png(px, |rt, f| mascot::draw_head(rt, f, 0, 0, k * ICON_X, k * ICON_Y, k * ICON_SIZE)) {
+        if let Some(png) = fox_png(px, |rt, f| mascot::draw_still(rt, f, mascot::Look::default(), k * 0.41, k * 0.57, k * 0.63, 1.0, false, 0.0)) {
             let _ = std::fs::write(dir.join(format!("icon_{px}.png")), png);
         }
     }
@@ -914,7 +977,7 @@ fn web_frames(dir: &std::path::Path) {
             hype: 0.0,
             sleep_mix: if sleeping { 1.0 } else { 0.0 },
             yarn_mix: if yarn { 1.0 } else { 0.0 },
-            yarn_ball: [0.06, -0.34, 22.0],
+            yarn_ball: [0.18, -0.28, 22.0, if yarn { 0.35 } else { 0.0 }],
         };
         if let Some(png) = fox_png(big, |rt, f| mascot::draw_bongo(rt, f, mascot::Look::default(), cx, cy, size, sleeping, st)) {
             let _ = std::fs::write(dir.with_file_name(format!("bongo_{name}.png")), png);
@@ -1010,11 +1073,6 @@ fn fox_png(px: i32, paint: impl FnOnce(&windows::Win32::Graphics::Direct2D::ID2D
         out
     }
 }
-
-/// Where the head sits in the icon square (fractions of its side).
-const ICON_X: f32 = 0.5;
-const ICON_Y: f32 = 0.55;
-const ICON_SIZE: f32 = 0.7;
 
 /// Monitors or the taskbar changed: keep the fox on a screen.
 pub fn keep_on_screen() {

@@ -265,6 +265,11 @@ fn install(bytes: &[u8]) -> Option<()> {
         let _ = std::fs::remove_file(&tmp);
         return None;
     }
+    // Tell Windows Explorer / Taskbar to refresh the cached exe icon immediately.
+    unsafe {
+        use windows::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None);
+    }
     Some(())
 }
 

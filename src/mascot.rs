@@ -658,8 +658,8 @@ pub struct BongoState {
     pub sleep_mix: f32,
     /// Smooth yarn-ball play blend (0 upright .. 1 lying on back batting yarn).
     pub yarn_mix: f32,
-    /// Yarn ball state in mascot units: [x, y, rotation_deg].
-    pub yarn_ball: [f32; 3],
+    /// Yarn ball state in mascot units: [x, y, rotation_deg, squash].
+    pub yarn_ball: [f32; 4],
 }
 
 #[derive(Clone, Copy)]
@@ -676,7 +676,7 @@ struct Bongo {
     hype: f32,
     sleep_mix: f32,
     yarn_mix: f32,
-    yarn_ball: [f32; 3],
+    yarn_ball: [f32; 4],
 }
 
 /// The fox being drawn has its glows turned off.
@@ -716,8 +716,8 @@ pub fn draw_bongo(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx
     r
 }
 
-/// Just the head, still, no tail or paws (the app icon).
-#[allow(clippy::too_many_arguments)]
+/// Just the head, still, no tail or paws (kept for small head-only icons if needed).
+#[allow(dead_code, clippy::too_many_arguments)]
 pub fn draw_head(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, species: usize, skin: usize, cx: f32, cy: f32, size: f32) -> Result<()> {
     BONGO.with(|c| {
         c.set(Some(Bongo {
@@ -733,7 +733,7 @@ pub fn draw_head(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, species: usize,
             hype: 0.0,
             sleep_mix: 0.0,
             yarn_mix: 0.0,
-            yarn_ball: [0.0; 3],
+            yarn_ball: [0.0; 4],
         }))
     });
     let r = draw(rt, factory, Look::new(species, skin, 0, 0), cx, cy, size, 1.0, false, 0.0);
@@ -769,7 +769,7 @@ pub fn draw_still(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx
             hype: 0.0,
             sleep_mix: if sleeping { 1.0 } else { 0.0 },
             yarn_mix: 0.0,
-            yarn_ball: [0.0; 3],
+            yarn_ball: [0.0; 4],
         }))
     });
     let r = draw(rt, factory, look, cx, cy, size, a, sleeping, 0.0);
@@ -1134,7 +1134,7 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
     let sm = bongo.map_or(if sleeping { 1.0 } else { 0.0 }, |b| b.sleep_mix);
     let ym_raw = bongo.map_or(0.0, |b| b.yarn_mix);
     let ym = ym_raw * ym_raw * (3.0 - 2.0 * ym_raw); // smoothstep organic roll
-    let yarn_ball = bongo.map_or([0.0, -0.42, 0.0], |b| b.yarn_ball);
+    let yarn_ball = bongo.map_or([0.18, -0.30, 0.0, 0.0], |b| b.yarn_ball);
 
     // Calm breathing + low-pass smoothed squash + organic sleep/yarn transitions.
     let breathe = (t * (2.0 - sm * 0.65)).sin();
@@ -1142,14 +1142,15 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
     let sy = 1.0 - squash * 0.045 - sm * 0.05 + breathe * (0.012 + sm * 0.016);
     let body = tr(0.0, -info.desk_y) * Matrix3x2::scale(sx, sy) * tr(0.0, info.desk_y);
 
-    // Head smoothly slumps & tilts onto the tucked paws when falling asleep,
-    // or leans cozily back looking up at the yarn ball during yarn play!
-    let bob = sm * 0.082 + ym * 0.045 + breathe * (0.010 + sm * 0.004);
+    // Head smoothly slumps onto tucked paws when sleeping, or reclines back onto the
+    // left side of the taskbar looking up-right at the bouncing yarn ball!
+    let hx = -0.19 * ym;
+    let bob = sm * 0.082 + ym * 0.13 + breathe * (0.010 + sm * 0.004);
     let awake_sway = (t * 0.85).sin() * 1.4 + head_bob * 1.4;
     let sleep_sway = 6.2 + (t * 0.7).sin() * 0.7;
-    let yarn_sway = -8.5 + (t * 1.1).sin() * 1.8 + yarn_ball[0] * 14.0;
+    let yarn_sway = -28.0 + (t * 1.1).sin() * 1.6 + (yarn_ball[0] - 0.18) * 14.0;
     let sway = (awake_sway * (1.0 - sm) + sleep_sway * sm) * (1.0 - ym) + yarn_sway * ym;
-    let head = rot(sway, 0.0, 0.34) * tr(0.0, bob) * body;
+    let head = rot(sway, 0.0, 0.34) * tr(hx, bob) * body;
     let fur = fur_brush(p, sk)?;
     let show = LAYERS.with(|c| c.get());
 
@@ -1167,17 +1168,17 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
             let phase = t * (1.05 - sm * 0.60);
             let amp = (3.6 + hype * 1.2) * (1.0 - sm) + 1.4 * sm;
             let wag = (phase.sin() + 0.22 * (phase * 2.0 - 0.6).sin()) * amp;
-            species::draw_tail(p, info.id, sk, &fur, body, wag, sm)?;
+            species::draw_tail(p, info.id, sk, &fur, body, wag, sm, ym)?;
         }
 
-        // Cozy species torso sitting on the desk/bottom edge (also shown in the notch!).
+        // Cozy species torso sitting on the desk/bottom edge (or reclining on its back for yarn play!).
         if !head_only {
-            species::draw_body(p, info.id, sk, &fur, body, sm, ym)?;
+            species::draw_body(p, info.id, sk, &fur, body, sm, ym, t)?;
         }
 
         // When deeply asleep (sm > 0.5), paws tuck behind the resting chin!
         if !head_only && sm > 0.5 {
-            species::draw_arms(p, info.id, sk, body, bongo.and_then(|b| b.paws), sm, ym, size)?;
+            species::draw_arms(p, info.id, sk, &fur, body, bongo.and_then(|b| b.paws), sm, ym, size)?;
         }
 
         shinobi::hair_back(p, sk, head)?;
@@ -1212,7 +1213,7 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
     }
 
     if show & 1 != 0 && !head_only && sm <= 0.5 {
-        species::draw_arms(p, info.id, sk, body, bongo.and_then(|b| b.paws), sm, ym, size)?;
+        species::draw_arms(p, info.id, sk, &fur, body, bongo.and_then(|b| b.paws), sm, ym, size)?;
     }
 
     // Playful bouncing yarn ball batted by the paws during yarn mode!
@@ -1253,23 +1254,36 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
     Ok(())
 }
 
-/// Cute wound yarn ball with criss-cross wool strands & curly dangling tail.
-fn draw_yarn_ball(p: &Pen, body: Matrix3x2, ball: [f32; 3], ym: f32, t: f32) -> Result<()> {
-    let [bx, by, deg] = ball;
-    let r = 0.145 * ym;
+/// Cute wound yarn ball with squash/stretch, wrapped wool strands & loose curly thread.
+fn draw_yarn_ball(p: &Pen, body: Matrix3x2, ball: [f32; 4], ym: f32, t: f32) -> Result<()> {
+    let vis = ((ym - 0.45) / 0.55).clamp(0.0, 1.0);
+    let vis = vis * vis * (3.0 - 2.0 * vis);
+    let [bx, by, deg, sq] = ball;
+    let r = 0.145 * vis;
     if r < 0.01 {
         return Ok(());
     }
-    let m = rot(deg, 0.0, 0.0) * tr(bx, by) * body;
-    let wool = [0.98, 0.44, 0.54];
-    let hi = [1.0, 0.72, 0.78];
-    let deep = [0.74, 0.20, 0.32];
-    let outline = [0.36, 0.12, 0.18];
+    let sx = (1.0 + sq * 0.16).clamp(0.84, 1.22);
+    let sy = (1.0 - sq * 0.16).clamp(0.82, 1.20);
+    let m = rot(deg, 0.0, 0.0) * Matrix3x2::scale(sx, sy) * tr(bx, by) * body;
+    let wool = [0.98, 0.44, 0.56];
+    let hi = [1.0, 0.74, 0.80];
+    let deep = [0.72, 0.18, 0.32];
+    let outline = [0.36, 0.11, 0.18];
 
-    // Dangling curly yarn tail trailing softly below the ball.
-    let sway = (t * 4.5).sin() * 0.03;
-    let tail = p.path("yarn_tail", &[M(0.0, 0.12), Q(0.10, 0.22, 0.04, 0.31), Q(-0.02, 0.38, 0.09, 0.42), O])?;
-    p.stroke(tr(bx + sway * 0.4, by) * Matrix3x2::scale(ym, ym) * body, &tail, wool, 0.9 * ym, 0.024);
+    // Playful loose curly yarn strand trailing softly from the ball.
+    let sway = (t * 4.5).sin() * 0.045;
+    let thread = build_path(
+        p.f,
+        &[
+            M(bx + r * 0.55, by + r * 0.65),
+            B(bx + 0.22 + sway, by + 0.10, bx + 0.04 - sway, by + 0.26, bx + 0.20 + sway, by + 0.34),
+            Q(bx + 0.28 + sway, by + 0.38, bx + 0.24, by + 0.42),
+            O,
+        ],
+    )?;
+    p.stroke(body, &thread, outline, 0.50 * vis, 0.032);
+    p.stroke(body, &thread, wool, 0.92 * vis, 0.018);
 
     // Main spherical wool gradient.
     p.at(m);
@@ -1277,16 +1291,16 @@ fn draw_yarn_ball(p: &Pen, body: Matrix3x2, ball: [f32; 3], ym: f32, t: f32) -> 
     unsafe { p.rt.FillEllipse(&ell(0.0, 0.0, r, r), &g) };
 
     // Criss-cross wound yarn arcs inside the ball.
-    let a1 = p.path("yarn_a1", &[M(-0.82, -0.35), Q(0.0, -0.02, 0.85, -0.28), O])?;
-    let a2 = p.path("yarn_a2", &[M(-0.88, 0.14), Q(0.05, 0.42, 0.82, 0.18), O])?;
-    let a3 = p.path("yarn_a3", &[M(-0.32, -0.84), Q(-0.02, 0.0, -0.24, 0.86), O])?;
+    let a1 = p.path("yarn_a1", &[M(-0.84, -0.35), Q(0.0, -0.02, 0.86, -0.28), O])?;
+    let a2 = p.path("yarn_a2", &[M(-0.88, 0.14), Q(0.05, 0.42, 0.84, 0.18), O])?;
+    let a3 = p.path("yarn_a3", &[M(-0.34, -0.84), Q(-0.02, 0.0, -0.24, 0.86), O])?;
     let a4 = p.path("yarn_a4", &[M(0.28, -0.82), Q(0.48, 0.04, 0.18, 0.85), O])?;
     let sm = Matrix3x2::scale(r, r) * m;
     for arc in [&a1, &a2, &a3, &a4] {
-        p.stroke(sm, arc, deep, 0.65 * ym, 0.11);
-        p.stroke(tr(-0.008, -0.008) * sm, arc, hi, 0.45 * ym, 0.05);
+        p.stroke(sm, arc, deep, 0.68 * vis, 0.11);
+        p.stroke(tr(-0.008, -0.008) * sm, arc, hi, 0.50 * vis, 0.055);
     }
-    p.ring(m, 0.0, 0.0, r, r, outline, 0.95 * ym, p.lw * 0.85);
+    p.ring(m, 0.0, 0.0, r, r, outline, 0.96 * vis, p.lw * 0.85);
     Ok(())
 }
 
@@ -1328,7 +1342,7 @@ fn tap_burst(p: &Pen, x: f32, y: f32, _side: f32, size: f32, a: f32) -> Result<(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn face(p: &Pen, info: &SpeciesInfo, sk: &Skin, head: Matrix3x2, sleep_mix: f32, yarn_mix: f32, yarn_ball: [f32; 3], hype: f32, t: f32, breathe: f32) -> Result<()> {
+fn face(p: &Pen, info: &SpeciesInfo, sk: &Skin, head: Matrix3x2, sleep_mix: f32, yarn_mix: f32, yarn_ball: [f32; 4], hype: f32, t: f32, breathe: f32) -> Result<()> {
     let asleep = sleep_mix >= 0.82;
     // Blush (glows rosier as typing speed rises or while playing with yarn).
     if sk.pattern != Pattern::Hearts {
@@ -1366,11 +1380,11 @@ fn face(p: &Pen, info: &SpeciesInfo, sk: &Skin, head: Matrix3x2, sleep_mix: f32,
     let look_x = if asleep || hype > 0.28 {
         0.0
     } else if yarn_mix > 0.1 {
-        (yarn_ball[0] * 0.06).clamp(-0.025, 0.025) * yarn_mix
+        (0.022 + (yarn_ball[0] - 0.18) * 0.05).clamp(-0.02, 0.032) * yarn_mix
     } else {
         (t * 0.31).sin() * 0.012
     };
-    let look_y = if asleep || hype > 0.28 { 0.0 } else { -0.020 * yarn_mix };
+    let look_y = if asleep || hype > 0.28 { 0.0 } else { -0.024 * yarn_mix };
     let lid = p.path("lid", LID)?;
     let happy_eye = p.path("happy_eye", HAPPY_EYE)?;
     let happy_eye_big = p.path("happy_eye_big", HAPPY_EYE_BIG)?;

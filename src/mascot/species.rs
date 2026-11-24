@@ -148,11 +148,14 @@ const TAIL_REDPANDA: &[S] = &[
 ];
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body: Matrix3x2, wag_deg: f32, sleep_mix: f32) -> Result<()> {
+pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body: Matrix3x2, wag_deg: f32, sleep_mix: f32, yarn_mix: f32) -> Result<()> {
     let sleep_off = sleep_mix * 0.03;
+    let yx = yarn_mix * 0.10;
+    let yy = yarn_mix * 0.04;
+    let ydeg = yarn_mix * 14.0;
     match sp {
         Species::Fox => {
-            let m = rot(wag_deg + sleep_mix * 12.0, 0.0, 0.0) * tr(0.24, 0.36 + sleep_off) * body;
+            let m = rot(wag_deg + sleep_mix * 12.0 + ydeg, 0.0, 0.0) * tr(0.24 + yx, 0.36 + sleep_off + yy) * body;
             let tail = p.path("sp_tail_fox", TAIL_FOX)?;
             let tip = p.clip("sp_tail_fox_tip", &tail, |p| build_path(p.f, TAIL_FOX_TIP))?;
             p.fill_with(m, &tail, fur);
@@ -161,7 +164,7 @@ pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
             p.stroke(m, &tail, p.line, 1.0, p.lw);
         }
         Species::Cat => {
-            let m = rot(wag_deg * 1.15 + sleep_mix * 14.0, 0.0, 0.0) * tr(0.30, 0.36 + sleep_off) * body;
+            let m = rot(wag_deg * 1.15 + sleep_mix * 14.0 + ydeg, 0.0, 0.0) * tr(0.30 + yx, 0.36 + sleep_off + yy) * body;
             let tail = p.path("sp_tail_cat", TAIL_CAT)?;
             p.fill_with(m, &tail, fur);
             let tip = p.clip_el("sp_tail_cat_tip", &tail, 0.26, -0.31, 0.10, 0.10)?;
@@ -169,13 +172,13 @@ pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
             p.stroke(m, &tail, p.line, 1.0, p.lw);
         }
         Species::Bunny => {
-            let m = rot(wag_deg * 0.7, 0.0, 0.0) * tr(0.32, 0.36 + sleep_off) * body;
+            let m = rot(wag_deg * 0.7, 0.0, 0.0) * tr(0.32 + yx, 0.36 + sleep_off + yy) * body;
             let tail = p.path("sp_tail_bunny", TAIL_BUNNY)?;
             p.fill(m, &tail, sk.cream, 1.0);
             p.stroke(m, &tail, p.line, 1.0, p.lw);
         }
         Species::Shiba => {
-            let m = rot(wag_deg * 0.75 + sleep_mix * 9.0, 0.0, 0.0) * tr(0.33, 0.32 + sleep_off) * body;
+            let m = rot(wag_deg * 0.75 + sleep_mix * 9.0 + ydeg * 0.6, 0.0, 0.0) * tr(0.33 + yx, 0.32 + sleep_off + yy) * body;
             let outer = p.shape("sp_tail_shiba", |p| p.ellipse_geo(0.12, -0.04, 0.17, 0.17))?;
             p.fill_with(m, &outer, fur);
             p.stroke(m, &outer, p.line, 1.0, p.lw);
@@ -184,7 +187,7 @@ pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
             p.stroke(m, &curl, p.line, 0.85, p.lw * 0.75);
         }
         Species::RedPanda => {
-            let m = rot(wag_deg * 0.95 + sleep_mix * 12.0, 0.0, 0.0) * tr(0.28, 0.36 + sleep_off) * body;
+            let m = rot(wag_deg * 0.95 + sleep_mix * 12.0 + ydeg, 0.0, 0.0) * tr(0.28 + yx, 0.36 + sleep_off + yy) * body;
             let tail = p.path("sp_tail_rp", TAIL_REDPANDA)?;
             p.fill_with(m, &tail, fur);
             if !p.small {
@@ -209,74 +212,108 @@ pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
 // ---------------------------------------------------------------- bodies
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw_body(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body: Matrix3x2, sleep_mix: f32, yarn_mix: f32) -> Result<()> {
+pub(super) fn draw_body(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body: Matrix3x2, sleep_mix: f32, yarn_mix: f32, t: f32) -> Result<()> {
     let info = SPECIES.iter().find(|s| s.id == sp).unwrap();
     let w = info.body_w;
     let y_bot = info.desk_y;
     let y_top = 0.16;
-    let key: &'static str = match sp {
-        Species::Fox => "sp_body_fox",
-        Species::Cat => "sp_body_cat",
-        Species::Bunny => "sp_body_bunny",
-        Species::Shiba => "sp_body_shiba",
-        Species::RedPanda => "sp_body_rp",
-    };
-    let g = p.shape(key, |p| {
-        let k = if sp == Species::Fox { 1.03 } else { 1.10 };
+    let k = if sp == Species::Fox { 1.03 } else { 1.10 };
+    let lerp = |a: f32, b: f32| a + (b - a) * yarn_mix;
+
+    // Continuously morph upright sitting torso into a plush horizontal reclining belly on its back!
+    let g = if yarn_mix <= 0.001 {
+        let key: &'static str = match sp {
+            Species::Fox => "sp_body_fox",
+            Species::Cat => "sp_body_cat",
+            Species::Bunny => "sp_body_bunny",
+            Species::Shiba => "sp_body_shiba",
+            Species::RedPanda => "sp_body_rp",
+        };
+        p.shape(key, |p| {
+            build_path(
+                p.f,
+                &[
+                    M(-w * 0.86, y_top),
+                    B(-w * k, 0.28, -w * k, y_bot, -w * 0.62, y_bot),
+                    L(w * 0.62, y_bot),
+                    B(w * k, y_bot, w * k, 0.28, w * 0.86, y_top),
+                    Z,
+                ],
+            )
+        })?
+    } else {
+        // Upright points smoothly interpolated to lying-on-back bean torso (head on left, belly up, rump on right).
+        let p0 = (lerp(-w * 0.86, -0.14), lerp(y_top, 0.24));
+        let c1 = (lerp(-w * k, -0.20), lerp(0.28, 0.38));
+        let c2 = (lerp(-w * k, -0.16), lerp(y_bot, y_bot));
+        let p1 = (lerp(-w * 0.62, -0.02), y_bot);
+        let p2 = (lerp(w * 0.62, 0.36), y_bot);
+        let c3 = (lerp(w * k, 0.49), lerp(y_bot, y_bot));
+        let c4 = (lerp(w * k, 0.47), lerp(0.28, 0.20));
+        let p3 = (lerp(w * 0.86, 0.32), lerp(y_top, 0.16));
+        let top_c = (lerp(0.0, 0.09), lerp(y_top, 0.12));
         build_path(
             p.f,
             &[
-                M(-w * 0.86, y_top),
-                B(-w * k, 0.28, -w * k, y_bot, -w * 0.62, y_bot),
-                L(w * 0.62, y_bot),
-                B(w * k, y_bot, w * k, 0.28, w * 0.86, y_top),
+                M(p0.0, p0.1),
+                B(c1.0, c1.1, c2.0, c2.1, p1.0, p1.1),
+                L(p2.0, p2.1),
+                B(c3.0, c3.1, c4.0, c4.1, p3.0, p3.1),
+                Q(top_c.0, top_c.1, p0.0, p0.1),
                 Z,
             ],
-        )
-    })?;
-    // Smoothly widen & settle into a loaf when sleeping, or puff the belly up during yarn play.
-    let bx = 1.0 + sleep_mix * 0.07 + yarn_mix * 0.10;
-    let by = 1.0 - sleep_mix * 0.07 + yarn_mix * 0.05;
+        )?
+    };
+
+    // Smoothly widen & settle into a loaf when sleeping.
+    let bx = 1.0 + sleep_mix * 0.07;
+    let by = 1.0 - sleep_mix * 0.07;
     let bm = tr(0.0, -y_bot) * Matrix3x2::scale(bx, by) * tr(0.0, y_bot) * body;
     p.fill_with(bm, &g, fur);
 
-    // Chest ruff / belly patch (warm cream for contrast under chin and between arms).
-    if sp == Species::Fox && yarn_mix < 0.5 {
+    // Chest ruff / fluffy upward-facing cream tummy patch.
+    if sp == Species::Fox && yarn_mix < 0.35 {
         let ruff = p.path("sp_ruff_fox", &[M(-0.17, 0.20), Q(-0.15, 0.34, -0.07, 0.37), Q(0.0, 0.43, 0.07, 0.37), Q(0.15, 0.34, 0.17, 0.20), Z])?;
-        p.fill(bm, &ruff, sk.cream, 0.96);
-    } else {
-        let rx = (if sp == Species::RedPanda { 0.18 } else { w * 0.54 }) * (1.0 + yarn_mix * 0.22);
-        let ry = 0.10 + yarn_mix * 0.055;
-        p.fill_el(bm, 0.0, 0.36 - yarn_mix * 0.04, rx, ry, sk.cream, 0.94);
+        p.fill(bm, &ruff, sk.cream, 0.96 * (1.0 - yarn_mix * 2.5).max(0.0));
+    }
+    if sp != Species::Fox || yarn_mix >= 0.2 {
+        let a = if sp == Species::Fox { ((yarn_mix - 0.2) / 0.4).clamp(0.0, 1.0) * 0.95 } else { 0.93 };
+        let base_rx = if sp == Species::RedPanda { 0.18 } else { w * 0.54 };
+        let cx = lerp(0.0, 0.20);
+        let cy = lerp(0.36, 0.25);
+        let rx = lerp(base_rx, 0.23);
+        let ry = lerp(0.10, 0.115);
+        let tm = rot(-7.0 * yarn_mix, cx, cy) * bm;
+        p.fill_el(tm, cx, cy, rx, ry, sk.cream, a);
     }
 
     // Soft under-chin ambient occlusion separating head from torso.
-    if !p.small {
+    if !p.small && yarn_mix < 0.8 {
         p.at(bm);
-        let sh = p.radial(0.0, 0.25, 0.30, 0.13, &[(0.0, INK, 0.26 * (1.0 - yarn_mix * 0.4)), (1.0, INK, 0.0)], 1.0)?;
+        let sh = p.radial(0.0, 0.25, 0.30, 0.13, &[(0.0, INK, 0.26 * (1.0 - yarn_mix)), (1.0, INK, 0.0)], 1.0)?;
         p.fill_with(bm, &g, &sh);
     }
 
     p.stroke(bm, &g, p.line, 1.0, p.lw);
 
-    // Cute little hind feet with pink toe-beans peeking out when lying on its back!
-    if yarn_mix > 0.05 {
+    // Playful curled hind feet on the right side of the reclining belly (kicking gently!).
+    if yarn_mix > 0.35 {
+        let fa = ((yarn_mix - 0.35) / 0.45).clamp(0.0, 1.0);
         let paw_c = match sp {
             Species::RedPanda => mix(sk.fur, INK, 0.68),
             Species::Fox => mix(sk.fur, INK, 0.64),
             _ => sk.cream,
         };
-        let pad = [1.0, 0.62, 0.72];
-        for side in [-1.0f32, 1.0] {
-            let hx = side * (0.28 + yarn_mix * 0.10);
-            let hy = y_bot - 0.035 - yarn_mix * 0.025;
-            let hm = Matrix3x2::scale(yarn_mix, yarn_mix) * rot(side * -18.0, 0.0, 0.0) * tr(hx, hy) * body;
-            p.fill_el(hm, 0.0, 0.0, 0.088, 0.068, paw_c, 1.0);
-            p.ring(hm, 0.0, 0.0, 0.088, 0.068, p.line, 1.0, p.lw);
+        let pad = [1.0, 0.60, 0.72];
+        let kick = (t * 5.2).sin() * 6.0 * fa;
+        for (hx, hy, deg) in [(0.42f32, 0.32f32, 24.0 - kick), (0.34, 0.27, 12.0 + kick)] {
+            let hm = Matrix3x2::scale(fa, fa) * rot(deg, 0.0, 0.0) * tr(hx, hy) * body;
+            p.fill_el(hm, 0.0, 0.0, 0.082, 0.062, paw_c, 1.0);
+            p.ring(hm, 0.0, 0.0, 0.082, 0.062, p.line, 1.0, p.lw);
             if !p.small {
-                p.fill_el(hm, 0.0, 0.012, 0.032, 0.024, pad, 0.9);
-                for tx in [-0.032f32, 0.0, 0.032] {
-                    p.fill_el(hm, tx, -0.024, 0.013, 0.014, pad, 0.9);
+                p.fill_el(hm, 0.008, 0.01, 0.028, 0.021, pad, 0.92);
+                for ty in [-0.024f32, 0.0, 0.024] {
+                    p.fill_el(hm, -0.026, ty, 0.012, 0.011, pad, 0.92);
                 }
             }
         }
@@ -461,7 +498,7 @@ pub(super) fn draw_whiskers(p: &Pen, sp: Species, head: Matrix3x2) {
 // ---------------------------------------------------------------- Bongo arms & paws
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw_arms(p: &Pen, sp: Species, sk: &Skin, body: Matrix3x2, paws: Option<[f32; 2]>, sleep_mix: f32, yarn_mix: f32, size: f32) -> Result<()> {
+pub(super) fn draw_arms(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body: Matrix3x2, paws: Option<[f32; 2]>, sleep_mix: f32, yarn_mix: f32, size: f32) -> Result<()> {
     let info = SPECIES.iter().find(|s| s.id == sp).unwrap();
     let dark_socks = matches!(sp, Species::RedPanda | Species::Fox);
     let paw_c = match sp {
@@ -469,7 +506,7 @@ pub(super) fn draw_arms(p: &Pen, sp: Species, sk: &Skin, body: Matrix3x2, paws: 
         Species::Fox => mix(sk.fur, INK, 0.64),
         _ => sk.cream,
     };
-    let pad_pink = [1.0, 0.62, 0.72];
+    let pad_pink = [1.0, 0.60, 0.72];
 
     for (i, side) in [-1.0f32, 1.0].into_iter().enumerate() {
         let tap = if sleep_mix > 0.5 { 0.0 } else { paws.map_or(0.0, |arr| arr[i]) * (1.0 - sleep_mix) };
@@ -479,34 +516,49 @@ pub(super) fn draw_arms(p: &Pen, sp: Species, sk: &Skin, body: Matrix3x2, paws: 
         // Sleeping pillow-tucked paw coordinates.
         let sleep_x = 0.15 * side;
         let sleep_y = info.desk_y - 0.015;
-        // Lying-on-back yarn-batting paw coordinates (raised paws bat UPWARD from the sides, never covering eyes!).
-        let yarn_x = 0.30 * side - tap * 0.03 * side;
-        let yarn_y = 0.25 - tap * 0.13;
+        // Lying-on-back yarn-batting paw coordinates: positioned above the reclining tummy
+        // (left paw near chest x=0.07, right paw over mid-belly x=0.25), batting UPWARD on tap!
+        let yarn_x = if side < 0.0 { 0.07 + tap * 0.03 } else { 0.27 - tap * 0.03 };
+        let yarn_y = if side < 0.0 { 0.13 - tap * 0.16 } else { 0.16 - tap * 0.16 };
 
         let ax = rest_x * (1.0 - sleep_mix) + sleep_x * sleep_mix;
         let ay = rest_y * (1.0 - sleep_mix) + sleep_y * sleep_mix;
         let px = ax * (1.0 - yarn_mix) + yarn_x * yarn_mix;
         let py = ay * (1.0 - yarn_mix) + yarn_y * yarn_mix;
 
-        let base_rx = if sp == Species::Bunny { 0.102 } else { 0.114 };
-        let (rx, ry) = (base_rx * (1.0 + tap * 0.10), (0.072 + yarn_mix * 0.022) * (1.0 - tap * 0.10));
-        let paw_deg = side * tap * (6.0 - yarn_mix * 18.0) - side * yarn_mix * 16.0;
+        // Connected little upper arm bridging the reclining chest/tummy to the batting paw.
+        if yarn_mix > 0.50 {
+            let aa = ((yarn_mix - 0.50) / 0.40).clamp(0.0, 1.0);
+            let (sx, sy) = if side < 0.0 { (0.04, 0.25) } else { (0.22, 0.27) };
+            let mx = (sx + px) * 0.5;
+            let my = (sy + py) * 0.5;
+            let dx = px - sx;
+            let dy = py - sy;
+            let len = (dx * dx + dy * dy).sqrt().max(0.05);
+            let ang = dy.atan2(dx).to_degrees();
+            let am = rot(ang, 0.0, 0.0) * tr(mx, my) * body;
+            let arm_g = p.ellipse_geo(0.0, 0.0, len * 0.54 + 0.025, 0.052)?;
+            p.fill_with(am, &arm_g, fur);
+            p.stroke(am, &arm_g, p.line, aa, p.lw * 0.9);
+        }
+
+        let base_rx = if sp == Species::Bunny { 0.098 } else { 0.106 };
+        let (rx, ry) = (base_rx * (1.0 + tap * 0.08 - yarn_mix * 0.10), (0.072 + yarn_mix * 0.012) * (1.0 - tap * 0.08));
+        let paw_deg = side * tap * (6.0 - yarn_mix * 20.0) + yarn_mix * if side < 0.0 { -18.0 } else { 14.0 };
         let pm = rot(paw_deg, 0.0, 0.0) * tr(px, py) * body;
 
         p.fill_el(pm, 0.0, 0.0, rx, ry, paw_c, 1.0);
         if dark_socks && !p.small && yarn_mix < 0.5 {
-            // Subtle warm rim arc on the upper edge of dark paws.
             p.seg(pm, -rx * 0.42, -ry * 0.52, rx * 0.42, -ry * 0.52, WHITE, 0.28 * (1.0 - yarn_mix * 2.0), 0.018);
         }
         p.ring(pm, 0.0, 0.0, rx, ry, p.line, 1.0, p.lw);
 
         if !p.small {
             if yarn_mix > 0.35 {
-                // Upturned pink toe beans while batting the yarn ball!
                 let pa = ((yarn_mix - 0.35) / 0.65).clamp(0.0, 1.0);
-                p.fill_el(pm, 0.0, 0.016, 0.036, 0.026, pad_pink, 0.92 * pa);
-                for tx in [-0.036f32, 0.0, 0.036] {
-                    p.fill_el(pm, tx, -0.022, 0.015, 0.016, pad_pink, 0.92 * pa);
+                p.fill_el(pm, 0.0, 0.014, 0.032, 0.024, pad_pink, 0.92 * pa);
+                for tx in [-0.032f32, 0.0, 0.032] {
+                    p.fill_el(pm, tx, -0.020, 0.013, 0.014, pad_pink, 0.92 * pa);
                 }
             } else {
                 let crease = if dark_socks { WHITE } else { p.line };
@@ -517,9 +569,21 @@ pub(super) fn draw_arms(p: &Pen, sp: Species, sk: &Skin, body: Matrix3x2, paws: 
             }
         }
 
-        if paws.is_some() && sleep_mix < 0.3 && yarn_mix < 0.3 && tap > 0.5 {
-            let a = (tap - 0.5) * 2.0 * (1.0 - yarn_mix * 3.0).max(0.0);
-            tap_burst(p, px, py + 0.01, side, size, a)?;
+        if paws.is_some() && sleep_mix < 0.3 && tap > 0.5 {
+            if yarn_mix < 0.3 {
+                let a = (tap - 0.5) * 2.0 * (1.0 - yarn_mix * 3.0).max(0.0);
+                tap_burst(p, px, py + 0.01, side, size, a)?;
+            } else if yarn_mix > 0.6 {
+                // Upward impact lines when batting the yarn ball!
+                let a = (tap - 0.5) * 2.0 * ((yarn_mix - 0.6) / 0.4).clamp(0.0, 1.0);
+                let c = [1.0, 0.58, 0.68];
+                let w = 0.020f32.max(1.1 / size);
+                for (deg, len) in [(-32.0f32, 0.045), (0.0, 0.055), (32.0, 0.045)] {
+                    let (s, co) = deg.to_radians().sin_cos();
+                    let (x0, y0) = (px + s * 0.09, py - 0.04 - co * 0.05);
+                    p.seg(body, x0, y0, x0 + s * len, y0 - co * len, c, 0.85 * a, w);
+                }
+            }
         }
     }
     Ok(())
