@@ -155,11 +155,21 @@ fn run(install: bool) -> bool {
     done
 }
 
-/// Starts the freshly installed exe (it waits for this one to quit).
-pub fn relaunch() {
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).arg("--after-update").spawn();
+static RELAUNCH_EXE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Starts the freshly installed exe, retrying briefly if Windows Defender is scanning it.
+/// Returns true once the new process has been spawned.
+pub fn relaunch() -> bool {
+    let Some(exe) = RELAUNCH_EXE.get().cloned().or_else(|| std::env::current_exe().ok()) else {
+        return false;
+    };
+    for _ in 0..10 {
+        if std::process::Command::new(&exe).arg("--after-update").spawn().is_ok() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(200));
     }
+    false
 }
 
 fn paths() -> Option<(PathBuf, PathBuf, PathBuf)> {
@@ -253,6 +263,7 @@ fn download(rel: &Release) -> Option<()> {
 /// be renamed, not overwritten).
 fn install(bytes: &[u8]) -> Option<()> {
     let (exe, tmp, old) = paths()?;
+    let _ = RELAUNCH_EXE.set(exe.clone());
     std::fs::write(&tmp, bytes).ok()?;
     let _ = std::fs::remove_file(&old);
     if std::fs::rename(&exe, &old).is_err() {

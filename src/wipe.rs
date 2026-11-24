@@ -37,7 +37,10 @@ pub fn finish() {
     crate::autostart::set(false);
     let _ = std::fs::remove_dir_all(crate::settings::data_dir());
     match mode {
-        WIPE => crate::updater::relaunch(),
+        WIPE => {
+            crate::release_instance_mutex();
+            let _ = crate::updater::relaunch();
+        }
         UNINSTALL => remove_exe(),
         _ => {}
     }

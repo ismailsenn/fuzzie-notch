@@ -23,33 +23,52 @@ mod updater;
 mod window;
 mod wipe;
 
+use std::sync::atomic::{AtomicIsize, Ordering};
 use windows::core::{w, Result};
-use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
 use windows::Win32::System::Ole::OleInitialize;
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 
+static INSTANCE_MUTEX: AtomicIsize = AtomicIsize::new(0);
+
+/// Releases the single-instance mutex right before relaunching into an updated exe.
+pub fn release_instance_mutex() {
+    let raw = INSTANCE_MUTEX.swap(0, Ordering::AcqRel);
+    if raw != 0 {
+        unsafe {
+            let _ = CloseHandle(HANDLE(raw as *mut core::ffi::c_void));
+        }
+    }
+}
+
 fn main() -> Result<()> {
+    let after_update = std::env::args().any(|a| a == "--after-update");
+    let snapshot = std::env::args().any(|a| a == "--snapshot");
     unsafe {
-        // One instance per user session; the handle lives until the process exits.
-        let mut _mutex = CreateMutexW(None, true, w!("Fuzzie_SingleInstance_Mutex"))?;
-        // Started by an update: the old Fuzzie is still closing, wait for it.
-        if std::env::args().any(|a| a == "--after-update") {
+        // One instance per user session; save GetLastError() immediately after CreateMutexW.
+        let mut mutex = CreateMutexW(None, true, w!("Fuzzie_SingleInstance_Mutex"))?;
+        let mut already = GetLastError() == ERROR_ALREADY_EXISTS;
+        // Started by an update: if the old Fuzzie hasn't released the mutex yet, wait for it.
+        if after_update && already {
             for _ in 0..100 {
-                if GetLastError() != ERROR_ALREADY_EXISTS {
+                let _ = CloseHandle(mutex);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                mutex = CreateMutexW(None, true, w!("Fuzzie_SingleInstance_Mutex"))?;
+                already = GetLastError() == ERROR_ALREADY_EXISTS;
+                if !already {
                     break;
                 }
-                let _ = windows::Win32::Foundation::CloseHandle(_mutex);
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                _mutex = CreateMutexW(None, true, w!("Fuzzie_SingleInstance_Mutex"))?;
             }
         }
         // `--snapshot` renders to files and quits, so it may run beside the real one.
-        if GetLastError() == ERROR_ALREADY_EXISTS && !std::env::args().any(|a| a == "--snapshot") {
+        if already && !snapshot {
+            let _ = CloseHandle(mutex);
             return Ok(());
         }
+        INSTANCE_MUTEX.store(mutex.0 as isize, Ordering::Release);
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         // OLE (not just COM) so the notch can accept dropped files.
         OleInitialize(None)?;

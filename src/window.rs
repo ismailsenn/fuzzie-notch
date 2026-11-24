@@ -1904,9 +1904,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             LRESULT(0)
         }
         crate::updater::WM_UPDATED => {
-            // A new version is in place: hand over to it.
-            crate::updater::relaunch();
-            let _ = DestroyWindow(hwnd);
+            // Release our single-instance mutex first so the new exe starts immediately,
+            // and only close once the new process has actually spawned.
+            crate::release_instance_mutex();
+            if crate::updater::relaunch() {
+                let _ = DestroyWindow(hwnd);
+            }
             LRESULT(0)
         }
         WM_DESTROY => {
