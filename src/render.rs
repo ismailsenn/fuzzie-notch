@@ -54,9 +54,9 @@ pub const CANVAS_H: f32 = 250.0;
 const COLLAPSED_H: f32 = 32.0;
 /// Collapsed clock row: margin at each end, the inset when the fox or the
 /// album art sits on the left, and the room the music bars add on the right.
-const CLOCK_PAD: f32 = 13.0;
-const CLOCK_ICON_IN: f32 = 38.0;
-const CLOCK_BARS: f32 = 22.0;
+const CLOCK_PAD: f32 = 15.0;
+const CLOCK_ICON_IN: f32 = 48.0;
+const CLOCK_BARS: f32 = 26.0;
 const EXPANDED_W: f32 = 470.0;
 const EXPANDED_H: f32 = 232.0;
 
@@ -579,7 +579,7 @@ impl Renderer {
         let (target, mut collapsed_h) = if idle_minimal {
             (lerp(120.0, 180.0, hud_t), lerp(10.0, COLLAPSED_H, hud_t))
         } else if let Some(line) = lyric_now {
-            ((self.measure(line, &self.f.lyric_small) + 92.0).clamp(200.0, 470.0), COLLAPSED_H)
+            ((self.measure(line, &self.f.lyric_small) + 104.0).clamp(210.0, 470.0), COLLAPSED_H)
         } else {
             (row_w + if bars_on { CLOCK_BARS } else { 0.0 }, COLLAPSED_H)
         };
@@ -686,7 +686,7 @@ impl Renderer {
                         self.art(s.media.art.as_deref(), art, 5.0, a_clock)?;
                     }
                     self.note(x0 + w - 25.0, COLLAPSED_H / 2.0, s.theme.accent, a_clock)?;
-                    let (lo, hi) = (x0 + 40.0, x0 + w - 40.0);
+                    let (lo, hi) = (x0 + 48.0, x0 + w - 48.0);
                     let mid = (lo + hi) / 2.0;
                     let room = (hi - lo).max(10.0);
                     // The new line rises in from below while the one before it
