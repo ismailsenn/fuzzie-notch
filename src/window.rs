@@ -595,6 +595,10 @@ impl App {
         // FUZZIE_DEMO=1: a made-up song instead of what is really playing.
         let demo = std::env::var("FUZZIE_DEMO").is_ok();
         let save = |a: &mut App, name: &str| {
+            // Let the collapsed width settle first (the demo song is put back
+            // each frame in case the media thread reports the real one meanwhile).
+            let frames = if name.starts_with("closed_") { 40 } else { 1 };
+            for _ in 0..frames {
             if demo {
                 // Lyrics shown are from a public-domain song (Robert Burns, 1788).
                 let m = if name.starts_with("music_wide") {
@@ -606,8 +610,16 @@ impl App {
                 let lines: Vec<(u64, String)> = lines.iter().enumerate().map(|(i, l)| (40_000 + i as u64 * 6_000, l.to_string())).collect();
                 a.lyrics.lock().unwrap().current = Some(lyrics::Lyrics { key: m.key(), lines: Arc::new(lines), synced: true });
                 *a.media.lock().unwrap() = m;
+                // The collapsed clock row: nothing playing, and playing without lyrics.
+                if name == "closed_idle.png" {
+                    a.media.lock().unwrap().playing = false;
+                }
+                if name == "closed_play.png" {
+                    a.lyrics.lock().unwrap().current = None;
+                }
             }
             a.redraw();
+            }
             let (w, h) = (a.renderer.width as u32, a.renderer.height as u32);
             if let Some(png) = crate::image::encode_png(w, h, a.renderer.pixels()) {
                 let _ = std::fs::write(dir.join(name), png);
@@ -618,6 +630,8 @@ impl App {
         self.open = false;
         self.anim = 0.0;
         save(self, "closed.png");
+        save(self, "closed_idle.png");
+        save(self, "closed_play.png");
         // A notification in the collapsed notch.
         self.hud = Some(Hud::Notice(crate::notify::Notice { app: "Discord".into(), title: "Ada Lovelace".into(), body: "Are we still on for tonight? I'll bring the notes.".into(), fox: None }));
         self.hud_until = Some(Instant::now() + Duration::from_secs(60));

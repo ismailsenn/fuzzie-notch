@@ -52,6 +52,11 @@ pub const CANVAS_W: f32 = 520.0;
 pub const CANVAS_H: f32 = 250.0;
 
 const COLLAPSED_H: f32 = 32.0;
+/// Collapsed clock row: margin at each end, the inset when the fox or the
+/// album art sits on the left, and the room the music bars add on the right.
+const CLOCK_PAD: f32 = 13.0;
+const CLOCK_ICON_IN: f32 = 38.0;
+const CLOCK_BARS: f32 = 22.0;
 const EXPANDED_W: f32 = 470.0;
 const EXPANDED_H: f32 = 232.0;
 
@@ -552,14 +557,19 @@ impl Renderer {
         // Minimal stays a thin bar even while music plays.
         let idle_minimal = s.minimal;
         let lyric_now = if s.media.playing { s.current_line() } else { None };
+        // The clock row hugs its content with the same margin on both sides:
+        // [fox or art] clock [bars], the bars only while music plays.
+        let icon_slot = s.mascot.is_some() || s.media.playing;
+        let bars_on = s.media.playing && s.visualizer;
+        let left_in = if icon_slot { CLOCK_ICON_IN } else { CLOCK_PAD };
+        let clock_w = self.measure(s.clock, &self.f.clock_small);
+        let row_w = left_in + clock_w + CLOCK_PAD;
         let (target, mut collapsed_h) = if idle_minimal {
             (lerp(120.0, 180.0, hud_t), lerp(10.0, COLLAPSED_H, hud_t))
         } else if let Some(line) = lyric_now {
             ((self.measure(line, &self.f.lyric_small) + 92.0).clamp(200.0, 470.0), COLLAPSED_H)
-        } else if s.media.playing {
-            (190.0, COLLAPSED_H)
         } else {
-            (170.0, COLLAPSED_H)
+            (row_w + if bars_on { CLOCK_BARS } else { 0.0 }, COLLAPSED_H)
         };
         let prev = self.collapsed_w.get();
         let mut cw = if prev == 0.0 || idle_minimal { target } else { prev + (target - prev) * 0.25 };
@@ -690,7 +700,12 @@ impl Renderer {
                     unsafe { rt.PopAxisAlignedClip() };
                     drawn?;
                 } else {
-                    let r = D2D_RECT_F { left: x0, top: 0.0, right: x0 + w, bottom: COLLAPSED_H };
+                    // How far the bars' room has opened (follows the eased width,
+                    // so they fade in as the notch grows and out as it shrinks).
+                    let bars_t = ((collapsed_w - row_w) / CLOCK_BARS).clamp(0.0, 1.0);
+                    let right_in = CLOCK_PAD + CLOCK_BARS * bars_t;
+                    let mid = x0 + (left_in + w - right_in) / 2.0;
+                    let r = D2D_RECT_F { left: mid - clock_w / 2.0 - 4.0, top: 0.0, right: mid + clock_w / 2.0 + 4.0, bottom: COLLAPSED_H };
                     self.text(s.clock, &self.f.clock_small, r, self.fg(), a_clock)?;
                     if s.mascot.is_some() {
                         self.mascot(s, x0 + 22.0, COLLAPSED_H / 2.0 + 1.0, 20.0, a_clock)?;
@@ -698,8 +713,9 @@ impl Renderer {
                         let art = D2D_RECT_F { left: x0 + 12.0, top: 6.0, right: x0 + 32.0, bottom: 26.0 };
                         self.art(s.media.art.as_deref(), art, 5.0, a_clock)?;
                     }
-                    if s.media.playing && s.visualizer {
-                        self.equaliser(x0 + w - 24.0, COLLAPSED_H / 2.0, s.time, s.theme.accent, a_clock)?;
+                    if bars_t > 0.0 && s.visualizer {
+                        // The bars span 14 px left of their x; keep them CLOCK_PAD from the edge.
+                        self.equaliser(x0 + w - CLOCK_PAD - 6.0, COLLAPSED_H / 2.0, s.time, s.theme.accent, a_clock * bars_t * bars_t)?;
                     }
                 }
             }
