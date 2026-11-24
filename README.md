@@ -31,4 +31,4 @@ npx wrangler deploy
 
 ## Notes
 
-The "shinobi" skins and accessories are fan-made tributes; character names belong to their owners.
+Skins and accessories come in packs (Classic, Shinobi Pack); every look is drawn in code for Fuzzie.

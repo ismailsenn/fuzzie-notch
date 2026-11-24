@@ -1704,10 +1704,16 @@ impl SettingsWindow {
         let (px, pr) = (stage.right + 22.0, r.right - 22.0);
         let skin = mascot::get(s.skin);
         let (ns, na) = (mascot::SKINS.len(), mascot::ACCESSORIES.len());
-        let sub = format!("{} / {}  \u{00B7}  {}", s.skin % ns + 1, ns, skin.tags());
+        let pack = mascot::skin_pack(s.skin);
+        let sub = format!("{}  \u{00B7}  {} / {}  \u{00B7}  {}", pack.name, s.skin % ns - pack.skins.start + 1, pack.skins.len(), skin.tags());
         self.selector(rt, "SKIN", skin.name, &sub, px, pr, r.top + 22.0, Act::StepSkin(-1), Act::StepSkin(1), accent)?;
         let (aname, moving) = mascot::ACCESSORIES[s.acc % na];
-        let sub = format!("{} / {}{}", s.acc % na + 1, na, if moving { "  \u{00B7}  Animated" } else { "" });
+        let sub = if s.acc % na == 0 {
+            "No accessory".to_string()
+        } else {
+            let pack = mascot::acc_pack(s.acc);
+            format!("{}  \u{00B7}  {} / {}{}", pack.name, s.acc % na - pack.accs.start + 1, pack.accs.len(), if moving { "  \u{00B7}  Animated" } else { "" })
+        };
         self.selector(rt, "ACCESSORY", aname, &sub, px, pr, r.top + 122.0, Act::StepAcc(-1), Act::StepAcc(1), accent)?;
 
         let hot = self.hv(Act::Random);
@@ -1771,16 +1777,38 @@ impl SettingsWindow {
         Ok(y + 70.0)
     }
 
-    /// Cards for every skin (`tab` 0) or accessory (`tab` 1), each with a live fox.
+    /// Cards for every skin (`tab` 0) or accessory (`tab` 1), each with a live
+    /// fox, grouped by pack under a heading per pack.
     fn grid(&mut self, rt: &ID2D1RenderTarget, s: &Settings, y: f32, tab: usize, accent: [f32; 3]) -> Result<f32> {
         let (ns, na) = (mascot::SKINS.len(), mascot::ACCESSORIES.len());
-        let n = if tab == 0 { ns } else { na };
-        let (cols, gap, ch) = (4usize, 14.0, 172.0);
+        let (cols, gap, ch, head) = (4usize, 14.0, 172.0, 40.0);
         let cw = (RIGHT - LEFT - gap * (cols - 1) as f32) / cols as f32;
-        for i in 0..n {
-            let (col, row) = ((i % cols) as f32, (i / cols) as f32);
-            let l = LEFT + col * (cw + gap);
-            let top = y + 10.0 + row * (ch + gap);
+        // Each card's slot: the pack's heading comes first, then its cards.
+        let mut slots: Vec<(usize, f32, f32)> = Vec::new();
+        let mut top = y + 10.0;
+        for (pi, pack) in mascot::PACKS.iter().enumerate() {
+            let mut items: Vec<usize> = if tab == 0 { pack.skins.clone().collect() } else { pack.accs.clone().collect() };
+            // "None" leads the first pack's accessories.
+            if tab == 1 && pi == 0 {
+                items.insert(0, 0);
+            }
+            if items.is_empty() {
+                continue;
+            }
+            let hr = D2D_RECT_F { left: LEFT + 2.0, top: top + 8.0, right: RIGHT, bottom: top + 30.0 };
+            if hr.bottom > 0.0 && hr.top < WIN_H {
+                let label = format!("{}  \u{00B7}  {}", pack.name.to_uppercase(), items.len());
+                Self::text(rt, &label, &self.f.stat_label, hr, accent)?;
+            }
+            top += head;
+            for (k, &i) in items.iter().enumerate() {
+                let (col, row) = ((k % cols) as f32, (k / cols) as f32);
+                slots.push((i, LEFT + col * (cw + gap), top + row * (ch + gap)));
+            }
+            top += items.len().div_ceil(cols) as f32 * (ch + gap) + 6.0;
+        }
+        let end = top;
+        for (i, l, top) in slots {
             if top + ch < 0.0 || top > WIN_H {
                 continue;
             }
@@ -1828,7 +1856,7 @@ impl SettingsWindow {
             Self::text(rt, name, &self.f.card_name, nr, if selected { FG } else { NAV })?;
             self.hits.push((r, if tab == 0 { Act::Skin(i) } else { Act::Acc(i) }));
         }
-        Ok(y + 10.0 + n.div_ceil(cols) as f32 * (ch + gap))
+        Ok(end)
     }
 
     /// Saturation/value square and hue bar for the colour being edited.

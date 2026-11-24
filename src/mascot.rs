@@ -20,7 +20,7 @@ use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::render::{luminance, rgba};
 
-mod naruto;
+mod shinobi;
 
 type Rgb = [f32; 3];
 
@@ -57,7 +57,7 @@ pub enum Fx {
     Leaves,
     Stars,
     /// Flame-like aura licking up around the fox.
-    Chakra,
+    Aura,
     /// Crackling electric bolts.
     Lightning,
     /// Yellow speed streaks and sudden flashes.
@@ -71,31 +71,54 @@ pub enum Fx {
 pub enum Eye {
     Normal,
     /// Red with three turning commas.
-    Sharingan,
+    Tomoe,
     /// Red with a three-blade pinwheel.
-    Mangekyo,
-    /// Red with three petals around a ring.
-    Eternal,
+    Pinwheel,
+    /// Red with three petals crossing a ring.
+    Petals,
     /// Pale violet rings.
-    Rinnegan,
+    Ripple,
     /// Fiery orange with a slit pupil.
     Beast,
-    /// Only the right eye (as seen) is a Sharingan.
-    OneSharingan,
+    /// Only the right eye (as seen) has the commas.
+    OneTomoe,
 }
 
-/// Hair worn on the head.
+impl Eye {
+    fn label(self) -> &'static str {
+        match self {
+            Eye::Normal => "",
+            Eye::Tomoe | Eye::OneTomoe => "Tomoe",
+            Eye::Pinwheel => "Pinwheel",
+            Eye::Petals => "Petal eyes",
+            Eye::Ripple => "Ripple",
+            Eye::Beast => "Beast eyes",
+        }
+    }
+}
+
+/// Hair worn on the head (see `shinobi.rs` for the shapes).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Hair {
     None,
+    /// Wild spikes all round.
     Spiky,
+    /// Spikes with long locks framing the face.
     Flash,
-    Avenger,
-    Silver,
+    /// Swept back, long side bangs.
+    Swept,
+    /// Everything leaning to one side.
+    Leaning,
+    /// A huge spiky mane down to the shoulders.
     Mane,
-    Long,
+    /// Short and tousled.
     Short,
-    Curtain,
+    /// Long, straight, parted in the middle.
+    Straight,
+    /// Parted bangs, long side locks.
+    Parted,
+    /// Sharp upright spikes.
+    Sharp,
 }
 
 /// Marks on the face.
@@ -109,6 +132,8 @@ pub enum Face {
     TearLines,
     /// Beast markings, plus nine tails.
     Beast,
+    /// Metal studs on the nose and ears.
+    Studs,
 }
 
 pub struct Skin {
@@ -129,6 +154,8 @@ pub struct Skin {
     pub eye: Eye,
     pub hair: Hair,
     pub hairc: Rgb,
+    /// Shine on the hair.
+    pub sheen: Rgb,
     pub face: Face,
     pub facec: Rgb,
 }
@@ -141,7 +168,7 @@ impl Skin {
             v.push(format!("{:?}", self.pattern));
         }
         if self.eye != Eye::Normal {
-            v.push(format!("{:?}", if self.eye == Eye::OneSharingan { Eye::Sharingan } else { self.eye }));
+            v.push(self.eye.label().to_string());
         }
         if self.fx != Fx::None {
             v.push(format!("{:?}", self.fx));
@@ -180,9 +207,10 @@ impl Skin {
         self.eye = e;
         self
     }
-    const fn hair(mut self, h: Hair, c: u32) -> Self {
+    const fn hair(mut self, h: Hair, c: u32, sheen: u32) -> Self {
         self.hair = h;
         self.hairc = rgb(c);
+        self.sheen = rgb(sheen);
         self
     }
     const fn face(mut self, f: Face, c: u32) -> Self {
@@ -197,7 +225,7 @@ const fn rgb(hex: u32) -> Rgb {
 }
 
 const fn sk(name: &'static str, fur: u32, ear: u32, cream: u32, eyes: u32) -> Skin {
-    Skin { name, fur: rgb(fur), fur2: rgb(fur), ear: rgb(ear), cream: rgb(cream), eyes: rgb(eyes), mark: rgb(fur), pattern: Pattern::Plain, fx: Fx::None, fxc: rgb(0xFFFFFF), eye: Eye::Normal, hair: Hair::None, hairc: rgb(fur), face: Face::None, facec: rgb(eyes) }
+    Skin { name, fur: rgb(fur), fur2: rgb(fur), ear: rgb(ear), cream: rgb(cream), eyes: rgb(eyes), mark: rgb(fur), pattern: Pattern::Plain, fx: Fx::None, fxc: rgb(0xFFFFFF), eye: Eye::Normal, hair: Hair::None, hairc: rgb(fur), sheen: rgb(fur), face: Face::None, facec: rgb(eyes) }
 }
 
 use Fx as F;
@@ -254,18 +282,48 @@ pub const SKINS: &[Skin] = &[
     sk("Melon", 0x9AE27A, 0xFFC0C8, 0xFFE0E4, 0x1A2A10).pat(P::Stripes, 0x5EB040),
     sk("Blueberry", 0x5A6CF0, 0xC8D0FF, 0xEEF0FF, 0x10142A).pat(P::Spots, 0x3A48C0),
     sk("Strawberry", 0xFF4A6A, 0xFFD0D8, 0xFFF4F6, 0x2A0A10).pat(P::Spots, 0xFFE87A),
-    // Shinobi pack.
-    sk("Naruto", 0xF7931E, 0xFFC9A0, 0xFFF3E2, 0x2F7BE0).hair(Hair::Spiky, 0xFFD23F).face(Face::Whiskers, 0x5A3418).effect(F::Chakra, 0xFF9A2A),
-    sk("Minato", 0xF6CF4A, 0xFFE7B0, 0xFFF8E6, 0x2A64C8).grad(0xE8A93A).hair(Hair::Flash, 0xFFE070).effect(F::Flash, 0xFFE45A),
-    sk("Sasuke", 0x262A3E, 0x8E96C8, 0xE9E7F2, 0xD8202E).hair(Hair::Avenger, 0x1A1D2E).eye(Eye::Sharingan).effect(F::Lightning, 0x9FB4FF),
-    sk("Kakashi", 0xB9BEC7, 0xF0C8D0, 0xEEF0F3, 0x1E2128).hair(Hair::Silver, 0xE4E7EC).eye(Eye::OneSharingan).face(Face::Mask, 0x27304A).effect(F::Lightning, 0xBFE6FF),
-    sk("Madara", 0x221F2A, 0x9A6AA8, 0x4A4452, 0xD01828).hair(Hair::Mane, 0x121118).eye(Eye::Eternal).effect(F::Chakra, 0x4E78FF),
-    sk("Tobirama", 0xF1F3F7, 0xFFD0D8, 0xFFFFFF, 0xB3172C).hair(Hair::Short, 0xE2E7EF).face(Face::RedMarks, 0xD0213A).effect(F::Bubbles, 0x9FD8FF),
-    sk("Hashirama", 0x8A5A36, 0xE8B898, 0xF5E3D0, 0x1E140C).hair(Hair::Curtain, 0x24170F).effect(F::Leaves, 0x6CBF4A),
-    sk("Itachi", 0x2E2B35, 0x8A7A92, 0x5A5662, 0xC8102A).hair(Hair::Long, 0x16141B).eye(Eye::Mangekyo).face(Face::TearLines, 0x15131A).effect(F::Crows, 0x141218),
-    sk("Kurama", 0xF26A1B, 0xFFB070, 0xFFE2C0, 0xE8401A).grad(0xC8341A).eye(Eye::Beast).face(Face::Beast, 0x2A0E08).effect(F::Chakra, 0xFF6A1A),
-    sk("Pain", 0xE07A3A, 0xFFC8A8, 0xFFEEDD, 0x9A8CC8).eye(Eye::Rinnegan).hair(Hair::Spiky, 0xD8602A).effect(F::Glow, 0xB8A8FF),
+    // Shinobi pack: light fur, the character carried by hair, eyes and marks.
+    sk("Maelstrom", 0xF7962A, 0xFFCBA0, 0xFFF5E6, 0x2A86E8).hair(Hair::Spiky, 0xFFCB2E, 0xFFF3A6).face(Face::Whiskers, 0x7A4420).effect(F::Aura, 0xFFA23A),
+    sk("Golden Flash", 0xF2C98E, 0xFFD9BC, 0xFFF8EC, 0x2F6FD0).hair(Hair::Flash, 0xFFD23F, 0xFFF6C0).effect(F::Flash, 0xFFD84A),
+    sk("Avenger", 0xAFBBE6, 0xF2C2D6, 0xF7F8FF, 0xC8102A).hair(Hair::Swept, 0x22273D, 0x6A7CB0).eye(Eye::Tomoe).effect(F::Lightning, 0xA9C4FF),
+    sk("Copycat", 0xAAB4C4, 0xF0C4D0, 0xF2F4F8, 0x262A33).hair(Hair::Leaning, 0xE4E8EF, 0xFFFFFF).eye(Eye::OneTomoe).face(Face::Mask, 0x2C3550).effect(F::Lightning, 0xBFE6FF),
+    sk("Warlord", 0xDC8A90, 0xFFC6CC, 0xFFF4F4, 0xC0101E).hair(Hair::Mane, 0x1B1A24, 0x56608E).eye(Eye::Petals).effect(F::Aura, 0x6A86FF),
+    sk("Tide Lord", 0x95C8EA, 0xD8F0FF, 0xF6FBFF, 0xB3172C).hair(Hair::Short, 0xE6EAF2, 0xFFFFFF).face(Face::RedMarks, 0xD42A40).effect(F::Bubbles, 0x9FD8FF),
+    sk("Forest Lord", 0xA8C98A, 0xF0E6B8, 0xFAFDF2, 0x3A2414).hair(Hair::Straight, 0x34231A, 0x8A6248).effect(F::Leaves, 0x6CBF4A),
+    sk("Crow", 0xA898BE, 0xEEC4DA, 0xFAF6FF, 0xC8102A).hair(Hair::Parted, 0x1C1A24, 0x5E5478).eye(Eye::Pinwheel).face(Face::TearLines, 0x8E7686).effect(F::Crows, 0x1E1C26),
+    sk("Nine Tails", 0xF26A1B, 0xFFB070, 0xFFE2C0, 0xE8401A).grad(0xC8341A).eye(Eye::Beast).face(Face::Beast, 0x2A0E08).effect(F::Aura, 0xFF6A1A),
+    sk("Six Paths", 0xC4B6E2, 0xFFD2C4, 0xFBF8FF, 0xA898D8).hair(Hair::Sharp, 0xF07A2E, 0xFFC890).eye(Eye::Ripple).face(Face::Studs, 0xB8BEC8).effect(F::Glow, 0xB8A8FF),
 ];
+
+/// A themed set of skins and accessories, shown together in the pickers.
+pub struct Pack {
+    pub name: &'static str,
+    /// Range in [`SKINS`].
+    pub skins: std::ops::Range<usize>,
+    /// Range in [`ACCESSORIES`] (index 0, "None", belongs to no pack).
+    pub accs: std::ops::Range<usize>,
+}
+
+/// The packs, in picker order; together they cover every skin and accessory.
+pub const PACKS: &[Pack] = &[
+    Pack { name: "Classic", skins: 0..SHINOBI_SKIN, accs: 1..SHINOBI },
+    Pack { name: "Shinobi Pack", skins: SHINOBI_SKIN..SKINS.len(), accs: SHINOBI..ACCESSORIES.len() },
+];
+
+/// The first shinobi skin.
+const SHINOBI_SKIN: usize = 49;
+
+/// The pack a skin belongs to.
+pub fn skin_pack(i: usize) -> &'static Pack {
+    let i = i % SKINS.len();
+    PACKS.iter().find(|p| p.skins.contains(&i)).unwrap_or(&PACKS[0])
+}
+
+/// The pack an accessory belongs to ("None" counts as the first pack).
+pub fn acc_pack(i: usize) -> &'static Pack {
+    let i = i % ACCESSORIES.len();
+    PACKS.iter().find(|p| p.accs.contains(&i)).unwrap_or(&PACKS[0])
+}
 
 pub fn get(i: usize) -> &'static Skin {
     &SKINS[i % SKINS.len()]
@@ -302,17 +360,17 @@ pub const ACCESSORIES: &[(&str, bool)] = &[
     ("Sprout", true),
     ("Beanie", true),
     ("Knight Helmet", true),
-    // Shinobi pack (drawn in mascot/naruto.rs).
-    ("Leaf Headband", true),
-    ("Akatsuki Cloak", false),
-    ("Hokage Hat", true),
-    ("Rasengan", true),
-    ("Flying Kunai", true),
-    ("Anbu Mask", false),
-    ("Uchiha Fan", false),
-    ("Susanoo", true),
+    // Shinobi pack (drawn in mascot/shinobi.rs).
+    ("Leaf Plate", true),
+    ("Red Cloud Cloak", false),
+    ("Leader's Hat", true),
+    ("Spiral Sphere", true),
+    ("Warp Kunai", true),
+    ("Cat Mask", false),
+    ("Clan Fan", false),
+    ("Spirit Armor", true),
     ("Sage Marks", true),
-    ("Ninja Scroll", false),
+    ("Summon Scroll", false),
     ("Shuriken Orbit", true),
     ("Sand Gourd", false),
 ];
@@ -430,6 +488,22 @@ const SPARK: &[S] = &[M(0.0, -1.0), Q(0.12, -0.12, 1.0, 0.0), Q(0.12, 0.12, 0.0,
 const HEART: &[S] = &[M(0.0, 0.42), B(-0.62, 0.0, -0.42, -0.62, 0.0, -0.25), B(0.42, -0.62, 0.62, 0.0, 0.0, 0.42), Z];
 const LEAF: &[S] = &[M(-0.5, 0.0), Q(0.0, -0.42, 0.5, 0.0), Q(0.0, 0.42, -0.5, 0.0), Z];
 const BAND: &[S] = &[M(-0.6, -0.25), B(-0.2, -0.31, 0.2, -0.31, 0.6, -0.25), L(0.6, -0.155), B(0.2, -0.215, -0.2, -0.215, -0.6, -0.155), Z];
+
+/// One geometry covering all the outlines in `parts` (at least one).
+fn union_paths(f: &ID2D1Factory, parts: &[Vec<S>]) -> Result<ID2D1Geometry> {
+    let mut acc = build_path(f, &parts[0])?;
+    for part in &parts[1..] {
+        let b = build_path(f, part)?;
+        unsafe {
+            let geo = f.CreatePathGeometry()?;
+            let sink = geo.Open()?;
+            acc.CombineWithGeometry(&b, D2D1_COMBINE_MODE_UNION, None, 0.0004, &sink)?;
+            sink.Close()?;
+            acc = geo.cast()?;
+        }
+    }
+    Ok(acc)
+}
 
 fn build_path(f: &ID2D1Factory, cmds: &[S]) -> Result<ID2D1Geometry> {
     let v = |x: f32, y: f32| Vector2 { X: x, Y: y };
@@ -818,6 +892,11 @@ impl Pen<'_> {
         unsafe { self.f.CreateEllipseGeometry(&ell(x, y, rx, ry))?.cast() }
     }
 
+    /// Cached union of the outlines in `parts` (one clean outline to stroke).
+    fn union(&self, key: &'static str, parts: impl FnOnce() -> Vec<Vec<S>>) -> Result<ID2D1Geometry> {
+        self.shape(key, |p| union_paths(p.f, &parts()))
+    }
+
     /// Cached intersection of `a` with the shape `b` builds.
     fn clip(&self, key: &'static str, a: &ID2D1Geometry, b: impl FnOnce(&Self) -> Result<ID2D1Geometry>) -> Result<ID2D1Geometry> {
         self.shape(key, |p| unsafe {
@@ -958,7 +1037,7 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
     if show & 1 != 0 {
 
     // Tail, swishing behind the head (nine of them for the beast).
-    if !tiny && !naruto::tails(p, sk, &fur, t, sleeping)? {
+    if !tiny && !shinobi::tails(p, sk, &fur, t, sleeping)? {
         let swing = (t * 1.6).sin() * if sleeping { 3.0 } else { 9.0 };
         let m = rot(swing, 0.22, 0.36) * body;
         let tail = p.path("tail", TAIL)?;
@@ -969,7 +1048,7 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
         p.stroke(m, &tail, p.line, 1.0, p.lw);
     }
 
-    naruto::hair_back(p, sk, head)?;
+    shinobi::hair_back(p, sk, head)?;
 
     // Ears.
     if acc != HELMET {
@@ -987,7 +1066,8 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
         } else {
             p.fill_with(m, &outer, &fur);
             let tip = p.clip_el(tip_key, &outer, 0.36 * side, -0.62, 0.13, 0.14)?;
-            p.fill(m, &tip, mix(sk.fur, p.line, 0.45), 1.0);
+            let tip_c = if sk.hair != Hair::None { mix(sk.hairc, p.line, 0.15) } else { mix(sk.fur, p.line, 0.45) };
+            p.fill(m, &tip, tip_c, 1.0);
         }
         p.fill(m, &inner, sk.ear, 1.0);
         p.stroke(m, &outer, p.line, 1.0, p.lw);
@@ -1002,9 +1082,9 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
     p.fill(head, &cream, sk.cream, 1.0);
     pattern_over(p, sk, head)?;
     p.stroke(head, &hg, p.line, 1.0, p.lw);
-    naruto::over_head(p, sk, head)?;
+    shinobi::over_head(p, sk, head)?;
     face(p, sk, head, sleeping, t)?;
-    naruto::over_eyes(p, sk, head)?;
+    shinobi::over_eyes(p, sk, head)?;
     }
 
     if show & 4 != 0 {
@@ -1128,20 +1208,33 @@ fn face(p: &Pen, sk: &Skin, head: Matrix3x2, sleeping: bool, t: f32) -> Result<(
             p.stroke(tr(ex, ey) * head, &lid, sk.eyes, 1.0, p.lw * 1.15);
             continue;
         }
-        let ry = 0.094 * (1.0 - b);
-        p.fill_el(head, ex, ey, 0.08, ry, sk.eyes, 1.0);
-        let style = naruto::eye_for(sk.eye, side);
-        if style != Eye::Normal && !p.small {
-            naruto::iris(p, style, Matrix3x2::scale(0.08, ry) * tr(ex, ey) * head, t)?;
+        let style = shinobi::eye_for(sk.eye, side);
+        // Patterned eyes are bigger, so the pattern reads.
+        let patterned = style != Eye::Normal && !p.small;
+        let (rx, ry0) = if patterned { (0.1, 0.112) } else { (0.08, 0.094) };
+        let ry = ry0 * (1.0 - b);
+        p.fill_el(head, ex, ey, rx, ry, sk.eyes, 1.0);
+        if patterned {
+            shinobi::iris(p, style, Matrix3x2::scale(rx, ry) * tr(ex, ey) * head, t)?;
         } else if !p.small {
             p.at(head);
             let shine = p.radial(ex, ey + ry * 0.55, 0.07, ry * 0.6, &[(0.0, mix(sk.eyes, WHITE, 0.45), 0.9), (1.0, sk.eyes, 0.0)], 1.0)?;
             unsafe { p.rt.FillEllipse(&ell(ex, ey + ry * 0.4, 0.07, ry * 0.6), &shine) };
         }
         let k = 1.0 - b;
-        p.fill_el(head, ex - 0.026, ey - 0.032 * k, 0.03, 0.03 * k, WHITE, 0.95);
-        if !p.small {
-            p.fill_el(head, ex + 0.03, ey + 0.036 * k, 0.014, 0.014 * k, WHITE, 0.85);
+        if patterned {
+            // One small glint on the rim, clear of the pattern.
+            p.fill_el(head, ex - rx * 0.6, ey - ry * 0.62, 0.02, 0.02 * k, WHITE, 0.95);
+        } else {
+            p.fill_el(head, ex - 0.026, ey - 0.032 * k, 0.03, 0.03 * k, WHITE, 0.95);
+            if !p.small {
+                p.fill_el(head, ex + 0.03, ey + 0.036 * k, 0.014, 0.014 * k, WHITE, 0.85);
+            }
+        }
+        // Shinobi skins get an anime upper lash, flicked out at the corner.
+        if shinobi::anime(sk) && !p.small {
+            let lash = p.path("sh_lash", shinobi::LASH)?;
+            p.fill(Matrix3x2::scale(rx * side, ry) * tr(ex, ey) * head, &lash, shinobi::lash_colour(sk), 1.0);
         }
     }
     // Nose and a little "w" mouth (hidden under a cloth mask).
@@ -1243,7 +1336,7 @@ fn pattern_over(p: &Pen, sk: &Skin, head: Matrix3x2) -> Result<()> {
 // ---------------------------------------------------------------- effects
 
 fn back_fx(p: &Pen, sk: &Skin, t: f32) -> Result<()> {
-    naruto::fx_back(p, sk, t)?;
+    shinobi::fx_back(p, sk, t)?;
     if sk.fx == Fx::Glow {
         let pulse = 0.75 + 0.25 * (t * 1.8).sin();
         p.glow(Matrix3x2::identity(), 0.0, -0.05, 0.86 + 0.04 * pulse, 0.82 + 0.04 * pulse, sk.fxc, 0.5 * pulse)?;
@@ -1317,7 +1410,7 @@ fn front_fx(p: &Pen, sk: &Skin, t: f32) -> Result<()> {
                 }
             }
         }
-        _ => naruto::fx_front(p, sk, t)?,
+        _ => shinobi::fx_front(p, sk, t)?,
     }
     Ok(())
 }
@@ -1328,7 +1421,7 @@ const GOLD: Rgb = [1.0, 0.82, 0.32];
 
 fn accessory(p: &Pen, i: usize, layer: Layer, h: Matrix3x2, t: f32) -> Result<()> {
     if i >= SHINOBI {
-        return naruto::accessory(p, i - SHINOBI, layer, h, t);
+        return shinobi::accessory(p, i - SHINOBI, layer, h, t);
     }
     use Layer::*;
     let lw = p.lw * 0.85;

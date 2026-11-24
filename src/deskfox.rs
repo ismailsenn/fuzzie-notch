@@ -594,14 +594,15 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
                 let _ = std::fs::write(dir.join(name), png);
             }
         }
-        // The shinobi pack: every skin bare, then every accessory on the first one.
-        let first = crate::mascot::SKINS.iter().position(|k| k.name == "Naruto").unwrap_or(0);
-        let skins = crate::mascot::SKINS.len() - first;
-        let accs = crate::mascot::ACCESSORIES.len() - 27;
+        // The shinobi pack: every skin bare, then every accessory on one of them.
+        let pack = &crate::mascot::PACKS[1];
+        let first = pack.skins.start;
+        let skins = pack.skins.len();
+        let (acc0, accs) = (pack.accs.start, pack.accs.len());
         d.forced = Some([0.0, 0.0]);
         d.sleeping = false;
         d.eyes_shut = false;
-        for (k, (skin, acc)) in (0..skins).map(|i| (first + i, 0)).chain((0..accs).map(|i| (first + i % skins, 27 + i))).enumerate() {
+        for (k, (skin, acc)) in (0..skins).map(|i| (first + i, 0)).chain((0..accs).map(|i| (first + i % skins, acc0 + i))).enumerate() {
             d.skin = skin;
             d.acc = acc;
             d.draw();
@@ -618,6 +619,9 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
         if let Some(png) = fox_png(px, |rt, f| mascot::draw_head(rt, f, 0, k * ICON_X, k * ICON_Y, k * ICON_SIZE)) {
             let _ = std::fs::write(dir.join(format!("icon_{px}.png")), png);
         }
+    }
+    if std::env::var_os("FUZZIE_PACK").is_some() {
+        pack_frames(&dir.join("pack"));
     }
     if std::env::var_os("FUZZIE_WEB_FRAMES").is_some() {
         web_frames(&dir.join("web"));
@@ -640,7 +644,9 @@ fn web_frames(dir: &std::path::Path) {
     let _ = std::fs::create_dir_all(dir);
     let px = 200;
     let k = px as f32;
-    let skins = mascot::SKINS.iter().position(|s| s.name == "Naruto").unwrap_or(mascot::SKINS.len());
+    // Only the classic pack is shown on the page.
+    let classic = &mascot::PACKS[0];
+    let skins = classic.skins.end;
     let save = |name: String, skin: usize, acc: usize, layers: u8, t: f32| {
         if let Some(png) = fox_png(px, |rt, f| mascot::draw_layers(rt, f, skin, acc, k * 0.5, k * 0.56, k * 0.42, t, layers)) {
             let _ = std::fs::write(dir.join(name), png);
@@ -662,10 +668,34 @@ fn web_frames(dir: &std::path::Path) {
         for skin in 0..skins {
             save(format!("skin_{skin}_{i:02}.png"), skin, 0, 1, t);
         }
-        for acc in 1..27 {
+        for acc in classic.accs.clone() {
             save(format!("accb_{acc}_{i:02}.png"), 0, acc, 2, t);
             save(format!("accf_{acc}_{i:02}.png"), 0, acc, 4, t);
         }
+    }
+}
+
+/// Large stills of the shinobi pack for checking the drawings by eye:
+/// every skin bare, and every pack accessory on a plain fox and on a pack skin.
+fn pack_frames(dir: &std::path::Path) {
+    let _ = std::fs::create_dir_all(dir);
+    let px = 360;
+    let k = px as f32;
+    let pack = &mascot::PACKS[1];
+    let (first, acc0) = (pack.skins.start, pack.accs.start);
+    let save = |name: String, skin: usize, acc: usize, t: f32, zoom: bool| {
+        let (cy, size) = if zoom { (k * 0.42, k * 0.92) } else { (k * 0.56, k * 0.4) };
+        if let Some(png) = fox_png(px, |rt, f| if t < 2.0 { mascot::draw_still(rt, f, skin, acc, k * 0.5, cy, size, 1.0, false, 0.0) } else { mascot::draw(rt, f, skin, acc, k * 0.5, cy, size, 1.0, false, t) }) {
+            let _ = std::fs::write(dir.join(name), png);
+        }
+    };
+    for s in pack.skins.clone() {
+        save(format!("skin_{:02}.png", s - first), s, 0, 1.3, false);
+        save(format!("face_{:02}.png", s - first), s, 0, 1.3, true);
+    }
+    for a in pack.accs.clone() {
+        save(format!("acc_{:02}.png", a - acc0), 0, a, 1.3, false);
+        save(format!("accs_{:02}.png", a - acc0), first + (a - acc0) % pack.skins.len(), a, 2.1, false);
     }
 }
 
