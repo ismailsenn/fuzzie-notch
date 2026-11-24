@@ -1,7 +1,8 @@
 //! Updates from this project's GitHub releases. Right after start-up and then
-//! every few minutes, the latest release is looked up; when it is newer,
-//! its `Fuzzie.exe` is downloaded, checked against the SHA-256 GitHub publishes
-//! for it, swapped in for the running exe, and Fuzzie restarts on the new one.
+//! every minute, a cheap probe asks which release is the latest; when it is
+//! newer, the release is looked up, its `Fuzzie.exe` downloaded, checked
+//! against the SHA-256 GitHub publishes for it, swapped in for the running
+//! exe, and Fuzzie restarts on the new one.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -21,11 +22,14 @@ use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_APP};
 const REPO: &str = "ismailsenn/fuzzie-notch";
 /// The release asset that is the app itself.
 const ASSET: &str = "Fuzzie.exe";
-/// Check soon after start, then often enough that a new release reaches
-/// everyone within minutes (6 calls an hour, well under GitHub's
-/// 60-per-hour limit for unauthenticated requests).
+/// Probe soon after start, then every minute, so a new release is installed
+/// about a minute after it is published. The probe is a HEAD request to the
+/// release page (not the API, which allows only 60 calls an hour); the API
+/// is only asked once the probe has seen a newer tag, and anyway every
+/// [`FULL_EVERY`] in case the probe stops working.
 const FIRST_CHECK: Duration = Duration::from_secs(5);
-const EVERY: Duration = Duration::from_secs(10 * 60);
+const EVERY: Duration = Duration::from_secs(60);
+const FULL_EVERY: u32 = 15;
 
 /// Posted to the notch window when a new exe is in place: restart on it.
 pub const WM_UPDATED: u32 = WM_APP + 9;
@@ -79,9 +83,15 @@ pub fn start(hwnd: HWND) {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         }
         std::thread::sleep(FIRST_CHECK);
+        let mut n = 0u32;
         loop {
-            if ENABLED.load(Ordering::Relaxed) && run(true) {
-                return;
+            if ENABLED.load(Ordering::Relaxed) {
+                // A newer tag seen by the probe, the first round, or one in a while.
+                let ask = n % FULL_EVERY == 0 || probe().is_some_and(|tag| is_newer(&tag));
+                if ask && run(true) {
+                    return;
+                }
+                n += 1;
             }
             std::thread::sleep(EVERY);
         }
@@ -182,6 +192,36 @@ fn latest() -> Option<Option<Release>> {
     Some(newer(&rel))
 }
 
+/// The latest release's tag, from where the release page redirects to
+/// (".../releases/tag/v1.2.3"). Cheap: a HEAD request, no API call.
+fn probe() -> Option<String> {
+    use windows::Web::Http::{HttpMethod, HttpRequestMessage};
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    // The stamp keeps any cache from answering with an old redirect.
+    let uri = Uri::CreateUri(&HSTRING::from(format!("https://github.com/{REPO}/releases/latest?t={stamp}"))).ok()?;
+    let client = HttpClient::new().ok()?;
+    if let Ok(h) = client.DefaultRequestHeaders() {
+        if let Ok(ua) = h.UserAgent() {
+            let _ = ua.TryParseAdd(&HSTRING::from(concat!("Fuzzie/", env!("CARGO_PKG_VERSION"))));
+        }
+    }
+    let req = HttpRequestMessage::Create(&HttpMethod::Head().ok()?, &uri).ok()?;
+    let resp = client.SendRequestAsync(&req).ok()?.join().ok()?;
+    let url = resp.RequestMessage().ok()?.RequestUri().ok()?.Path().ok()?.to_string();
+    tag_from_path(&url)
+}
+
+/// ".../releases/tag/v1.2.3" → "v1.2.3".
+fn tag_from_path(path: &str) -> Option<String> {
+    let (_, tag) = path.rsplit_once("/releases/tag/")?;
+    let tag = tag.trim_end_matches('/');
+    version(tag).map(|_| tag.to_string())
+}
+
+fn is_newer(tag: &str) -> bool {
+    matches!((version(tag), version(env!("CARGO_PKG_VERSION"))), (Some(a), Some(b)) if a > b)
+}
+
 fn newer(rel: &Value) -> Option<Release> {
     if rel["draft"].as_bool() == Some(true) || rel["prerelease"].as_bool() == Some(true) {
         return None;
@@ -267,6 +307,23 @@ mod tests {
         assert_eq!(version("v1.0.0-beta"), Some((1, 0, 0)));
         assert!(version("v0.10.0") > version("v0.9.9"));
         assert_eq!(version("latest"), None);
+    }
+
+    #[test]
+    fn tags_from_redirects() {
+        assert_eq!(tag_from_path("/ismailsenn/fuzzie-notch/releases/tag/v0.2.7").as_deref(), Some("v0.2.7"));
+        assert_eq!(tag_from_path("/ismailsenn/fuzzie-notch/releases"), None);
+        assert!(is_newer("v999.0.0"));
+        assert!(!is_newer("v0.0.1"));
+    }
+
+    /// Asks GitHub for real; run with `cargo test --release -- --ignored`.
+    #[test]
+    #[ignore]
+    fn probe_live() {
+        let tag = probe();
+        println!("latest: {tag:?}");
+        assert!(tag.is_some());
     }
 
     #[test]
