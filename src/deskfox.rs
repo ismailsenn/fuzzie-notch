@@ -1018,6 +1018,14 @@ fn web_frames(dir: &std::path::Path) {
             let _ = std::fs::write(dir.with_file_name(format!("bongo_{name}.png")), png);
         }
     }
+    // Single-frame stills for every other species x every Classic skin (tiny WebPs for the web Studio).
+    for sp in 1..mascot::SPECIES.len() {
+        for skin in 0..skins {
+            if let Some(png) = fox_png(px, |rt, f| mascot::draw_layers(rt, f, mascot::Look::new(sp, skin, 0, 0), k * 0.5, k * 0.56, k * 0.42, WEB_LOOP, 1)) {
+                let _ = std::fs::write(dir.join(format!("sp_{sp}_s{skin}_0.png")), png);
+            }
+        }
+    }
     // A few frames past the loop, for the page builder to blend into its start.
     for i in 0..WEB_FRAMES + 8 {
         // Starting one blink period in puts the seam on a blink and the ear twitch mid-loop.

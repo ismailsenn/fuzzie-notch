@@ -648,17 +648,19 @@
   const BACK = new Set([9, 13]);
   const FRONT = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]);
   const FRAMES = 52, COLS = 13, ROWS = 4, LOOP_MS = 4300;
+  const SP_DEF = [0, 24, 1, 6, 19];
   const layersOf = (skin, acc, acc2 = 0, sp = 0) => {
     const out = [];
     if (BACK.has(acc)) out.push("accb_" + acc);
     if (acc2 && acc2 !== acc && BACK.has(acc2)) out.push("accb_" + acc2);
-    out.push(sp > 0 ? "sp_" + sp : "skin_" + skin);
+    out.push(sp === 0 ? "skin_" + skin : skin === SP_DEF[sp] ? "sp_" + sp : "sp_" + sp + "_s" + skin);
     if (FRONT.has(acc)) out.push("accf_" + acc);
     if (acc2 && acc2 !== acc && FRONT.has(acc2)) out.push("accf_" + acc2);
     return out;
   };
   const sheets = new Map();
   const sheet = (n) => {
+    if (n.includes("_s")) return Promise.resolve(false);
     if (!sheets.has(n)) sheets.set(n, new Promise((ok) => { const i = new Image(); i.onload = () => ok(true); i.onerror = () => ok(false); i.src = "img/fox/" + n + ".webp"; }));
     return sheets.get(n);
   };
@@ -674,7 +676,7 @@
     playing.forEach((fox) => {
       if (fox.ready && fox.frame !== f) {
         fox.frame = f;
-        for (const i of fox.el.children) i.style.backgroundPosition = pos;
+        for (const i of fox.el.children) if (i.classList.contains("sheet")) i.style.backgroundPosition = pos;
       }
     });
     raf = requestAnimationFrame(step);
@@ -695,10 +697,13 @@
     }
     prepare(token) {
       Promise.all(this.names.map(sheet)).then((ok) => {
-        if (token !== this.token || !this.live || ok.includes(false)) return;
-        [...this.el.children].forEach((i, k) => { i.style.backgroundImage = "url(img/fox/" + this.names[k] + ".webp)"; i.classList.add("sheet"); });
+        if (token !== this.token || !this.live) return;
+        let any = false;
+        [...this.el.children].forEach((i, k) => {
+          if (ok[k]) { i.style.backgroundImage = "url(img/fox/" + this.names[k] + ".webp)"; i.classList.add("sheet"); any = true; }
+        });
         this.frame = -1;
-        this.ready = true;
+        this.ready = any;
       });
     }
     play() {
@@ -839,12 +844,12 @@
   const paint = () => {
     stage.set(look.skin, look.acc, look.acc2, look.sp);
     head.set(look.skin, look.acc, look.acc2, look.sp);
-    const title = look.sp > 0 ? SPECIES[look.sp] : SPECIES[0] + " · " + SKINS[look.skin];
+    const title = SPECIES[look.sp] + " · " + SKINS[look.skin];
     const gear = [look.acc ? ACCS[look.acc] : "", look.acc2 ? ACCS[look.acc2] : ""].filter(Boolean);
     $("stageName").innerHTML = title + "<span>" + (gear.length ? "wearing " + gear.join(" + ") : "no accessories") + "</span>";
     document.querySelectorAll(".look").forEach((b) => {
       const v = +b.dataset.i;
-      const on = mode === "species" ? v === look.sp : mode === "skins" ? look.sp === 0 && v === look.skin : mode === "head" ? v === look.acc : v === look.acc2;
+      const on = mode === "species" ? v === look.sp : mode === "skins" ? v === look.skin : mode === "head" ? v === look.acc : v === look.acc2;
       b.classList.toggle("on", on);
     });
   };
@@ -869,7 +874,7 @@
       b.append(el, name);
       const fox = new Fox(el);
       if (mode === "species") fox.set(look.skin, look.acc, look.acc2, i);
-      else if (mode === "skins") fox.set(i, look.acc, look.acc2, 0);
+      else if (mode === "skins") fox.set(i, look.acc, look.acc2, look.sp);
       else if (mode === "head") fox.set(look.skin, i, look.acc2, look.sp);
       else fox.set(look.skin, look.acc, i, look.sp);
       cards.push(fox);
@@ -877,7 +882,7 @@
       b.addEventListener("pointerleave", () => fox.stop());
       b.onclick = () => {
         if (mode === "species") look.sp = i;
-        else if (mode === "skins") { look.sp = 0; look.skin = i; }
+        else if (mode === "skins") look.skin = i;
         else if (mode === "head") look.acc = i;
         else look.acc2 = i;
         paint();
