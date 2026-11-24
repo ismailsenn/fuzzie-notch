@@ -476,15 +476,15 @@
           <div class="pose"><img loading="lazy" src="img/desk/rest.webp" alt="">Waiting</div>
           <div class="pose"><img loading="lazy" src="img/desk/left.webp" alt="">Left tap</div>
           <div class="pose"><img loading="lazy" src="img/desk/right.webp" alt="">Right tap</div>
-          <div class="pose"><img loading="lazy" src="img/desk/blink.webp" alt="">Blink</div>
+          <div class="pose"><img loading="lazy" src="img/desk/yarn.webp" alt="">Yarn play</div>
           <div class="pose"><img loading="lazy" src="img/desk/sleep.webp" alt="">Nap</div>
         </div>
       </div>
       <div>
         <ul class="ticks">
-          <li><i style="background:rgba(255,138,61,.16);color:#ff8a3d">&#9000;</i><span><b>Taps along &amp; smiles</b>Every key press and click, left paw, right paw. Type faster and your buddy breaks into a happy smile without any jitter.</span></li>
-          <li><i style="background:rgba(61,155,255,.16);color:#3d9bff">&#8596;</i><span><b>Sits where you want</b>On the taskbar it slides sideways; take it off and drag it anywhere on your screen.</span></li>
-          <li><i style="background:rgba(138,92,255,.18);color:#a98bff">z</i><span><b>Cozy naps when you're away</b>Rests its head on tucked-in paws with a gentle sleep bubble and drifting "zZZ", then wakes the moment you're back.</span></li>
+          <li><i style="background:rgba(255,138,61,.16);color:#ff8a3d">&#9000;</i><span><b>Taps, smiles &amp; yarn play</b>Taps the taskbar on every key and click, breaks into a happy smile as you type faster, and even rolls onto its back to bat a yarn ball.</span></li>
+          <li><i style="background:rgba(61,155,255,.16);color:#3d9bff">&#8596;</i><span><b>Snaps flush anywhere</b>Sits neatly on your taskbar, or detach it and snap it flush to any screen edge or corner.</span></li>
+          <li><i style="background:rgba(138,92,255,.18);color:#a98bff">z</i><span><b>Smooth naps when you're away</b>Gently curls up with a sleep bubble and drifting "zZZ", then wakes smoothly the moment you're back.</span></li>
           <li><i style="background:rgba(255,77,141,.16);color:#ff4d8d">&#10022;</i><span><b>Wears your look</b>Same animal, skin, and dual Head + Gear accessories as the notch, at any size, glow optional.</span></li>
           <li><i style="background:rgba(46,230,197,.15);color:#2ee6c5">&#9673;</i><span><b>Costs nothing</b>Pure Direct2D vector shapes with zero sprite bloat and near-zero CPU when idle.</span></li>
         </ul>
@@ -533,7 +533,7 @@
         <ul class="ticks">
           <li><i style="background:rgba(255,138,61,.16);color:#ff8a3d">+</i><span><b>Add from the notch</b>Open Friends, tap Add, paste their code and send.</span></li>
           <li><i style="background:rgba(46,230,197,.15);color:#2ee6c5">&#9679;</i><span><b>See who's around</b>Who's online and what they're listening to, right now.</span></li>
-          <li><i style="background:rgba(255,77,141,.16);color:#ff4d8d">&#9995;</i><span><b>Poke them</b>Your fox pops up in their notch to say hi.</span></li>
+          <li><i style="background:rgba(255,77,141,.16);color:#ff4d8d">&#9995;</i><span><b>Poke &amp; Kiss</b>Your buddy pops up in their notch to say hi — or try it right away with the built-in Fuzzie Bot.</span></li>
           <li><i style="background:rgba(138,92,255,.18);color:#a98bff">&#9835;</i><span><b>Listen along</b>Play the same song at the same moment.</span></li>
           <li><i style="background:rgba(255,210,63,.15);color:#ffd23f">&#9881;</i><span><b>You're in control</b>Hide your music or go offline any time.</span></li>
         </ul>
@@ -561,7 +561,7 @@
     <h2 class="serif">Good to know.</h2>
     <div class="faq">
       <details><summary>Is it free?</summary><p>Yes, and the code is open on GitHub.</p></details>
-      <details><summary>Does it slow my PC down?</summary><p>No. It's written in Rust, uses a few MB of memory and almost no CPU while idle. The notch and the desktop fox only draw when something moves.</p></details>
+      <details><summary>Does it slow my PC down?</summary><p>No. It's written in Rust, uses a few MB of memory and almost no CPU while idle. The notch and Desktop Fuzzie only draw when something moves.</p></details>
       <details><summary>What is Desktop Fuzzie?</summary><p>An optional fluffy buddy (Fox, Cat, Bunny, Shiba or Red Panda) that sits on your taskbar and taps along as you type and click. Turn it on in Settings &rarr; Desktop Fuzzie.</p></details>
       <details><summary>What do my friends see?</summary><p>Your name, your look, whether you're online and the song you're playing. You can stop sharing your music, or go offline, in Settings.</p></details>
       <details><summary>Do I need an account?</summary><p>No. Fuzzie makes a friend code for you on first start. There's no email or password.</p></details>
@@ -580,7 +580,7 @@
   </div>
 
   <footer>
-    Fuzzie · a tiny notch for Windows · <a href="https://github.com/ismailsenn/fuzzie-notch">GitHub</a> · <a href="https://github.com/ismailsenn/fuzzie-notch/releases">All releases</a><br>
+    Fuzzie · Built by Daicho · <a href="https://github.com/ismailsenn/fuzzie-notch">GitHub</a> · <a href="https://github.com/ismailsenn/fuzzie-notch/releases">All releases</a><br>
     Song titles in the pictures are only examples; the lyrics shown are from a public-domain song.
   </footer>
 </div>
@@ -792,7 +792,7 @@
     ["Music", "img/music.png", "Cover, controls and synced lyrics, from Spotify, your browser or any media app.", "#ff8a3d", "#8a5cff"],
     ["Lyrics off", "img/music_wide.png", "Turn lyrics off for a big cover and roomy controls.", "#ff4d8d", "#ffb050"],
     ["Shelf", "img/shelf.png", "Files you dropped on the notch on the left, everything you copied on the right.", "#ffd23f", "#2ee6c5"],
-    ["Friends", "img/friends.png", "Who's online, what they play, Poke and Listen along.", "#2ee6c5", "#3d9bff"],
+    ["Friends", "img/friends.png", "Who's online, what they play, Poke & Kiss, Listen along, plus Fuzzie Bot.", "#2ee6c5", "#3d9bff"],
     ["Add a friend", "img/friends_add.png", "Copy your code, paste theirs, press Send. All inside the notch.", "#8a5cff", "#ff4d8d"],
     ["Requests", "img/friends_requests.png", "Accept or decline new friends, and see who hasn't answered yet.", "#3d9bff", "#8a5cff"],
     ["Notifications", "img/notice.png", "Messages, volume, Caps Lock and audio device changes show up right in the notch.", "#ff6b6b", "#ffd23f"],

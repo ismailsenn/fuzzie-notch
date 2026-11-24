@@ -423,7 +423,6 @@ enum Item {
     YearBreakdown,
     Divider,
     FriendTable,
-    RpsTable,
     /// A one-line text box.
     Input(&'static str, Field),
     /// A person: name, a line under it, and buttons on the right.
@@ -480,6 +479,8 @@ enum Act {
     Decline(usize),
     Cancel(usize),
     Remove(usize),
+    PokeFriend(usize),
+    KissFriend(usize),
     CheckUpdate,
     InstallUpdate,
     DeleteData,
@@ -788,7 +789,6 @@ impl SettingsWindow {
                 Section("STARTUP"),
                 Toggle("Start with Windows", Key::StartWithWindows),
                 Toggle("Hide in full screen", Key::HideFullscreen),
-                Toggle("Update automatically", Key::AutoUpdate),
                 Section("OPENING"),
                 Segment("Open the notch on", Key::OpenMode, &["Hover", "Click"]),
                 Section("COLLAPSED NOTCH"),
@@ -828,14 +828,11 @@ impl SettingsWindow {
                     2 => v.push(AccGrid),
                     3 => v.push(GearGrid),
                     _ => v.extend([
-                        Section("MASCOT"),
-                        Toggle("Mascot", Key::ShowMascot),
+                        Section("NOTCH MASCOT"),
+                        Toggle("Show mascot in notch", Key::ShowMascot),
                         Toggle("Nap when I'm away", Key::Nap),
                         Segment("Start napping after", Key::NapAfter, &["10 s", "30 s", "1 min", "2 min", "5 min"]),
                         Toggle("Nap while music plays", Key::NapWhileMusic),
-                        Section("DESKTOP FUZZIE"),
-                        Toggle("Fox on the desktop", Key::DeskFox),
-                        t("More options are on the Desktop Fuzzie page."),
                     ]),
                 }
                 v
@@ -895,7 +892,7 @@ impl SettingsWindow {
                     format!("{} day{}  \u{00B7}  best {}", st.streak, if st.streak == 1 { "" } else { "s" }, st.best_streak),
                     None,
                 ));
-                v.extend([Divider, FriendTable, RpsTable]);
+                v.extend([Divider, FriendTable]);
                 v
             }
             10 => {
@@ -924,7 +921,8 @@ impl SettingsWindow {
             _ => vec![
                 MascotCard,
                 Row("Version", env!("CARGO_PKG_VERSION").to_string()),
-                t("A desktop notch for Windows: music, lyrics, shelf, clipboard and a fox."),
+                Row("Creator", "Built by Daicho".to_string()),
+                t("A desktop notch for Windows: music, lyrics, shelf, clipboard and fluffy buddies."),
                 Button("Open data folder", Act::OpenFolder, 190.0),
                 Section("YOUR DATA"),
                 t("Settings, stats, the shelf, clipboard history and your friends account."),
@@ -1643,36 +1641,21 @@ impl SettingsWindow {
                 y + 42.0
             }
             Item::FriendTable => {
-                let r = D2D_RECT_F { left: LEFT + 2.0, top: y + 8.0, right: RIGHT, bottom: y + 297.0 };
-                Self::card(rt, &self.f, r, "WITH YOUR FRIEND", accent)?;
+                let r = D2D_RECT_F { left: LEFT + 2.0, top: y + 8.0, right: RIGHT, bottom: y + 196.0 };
+                Self::card(rt, &self.f, r, "WITH YOUR FRIENDS", accent)?;
                 let (c1, c2) = (RIGHT - 210.0, RIGHT - 74.0);
                 let cell = |cx: f32, cy: f32, h: f32| D2D_RECT_F { left: cx - 70.0, top: cy - h, right: cx + 70.0, bottom: cy + h };
                 Self::text(rt, "Sent", &self.f.table_head, cell(c1, r.top + 61.0, 11.0), DIM)?;
                 Self::text(rt, "Received", &self.f.table_head, cell(c2, r.top + 61.0, 11.0), DIM)?;
                 let f = &st.friend;
-                let rows = [("Bonks", f.bonks_sent, f.bonks_received), ("Kisses", f.kisses_sent, f.kisses_received), ("Pies", f.pies_sent, f.pies_received), ("Pokes", f.pokes_sent, f.pokes_received)];
+                let rows = [("Pokes", f.pokes_sent, f.pokes_received), ("Kisses", f.kisses_sent, f.kisses_received)];
                 for (i, (name, sent, got)) in rows.iter().enumerate() {
                     let cy = r.top + 104.0 + i as f32 * 50.0;
-                    if i == 3 {
-                        Self::rounded(rt, D2D_RECT_F { left: r.left + 25.0, top: cy - 25.0, right: r.right - 25.0, bottom: cy - 24.0 }, 0.0, FG, 0.1)?;
-                    }
                     Self::text(rt, name, &self.f.label, D2D_RECT_F { left: r.left + 25.0, top: cy - 14.0, right: c1 - 70.0, bottom: cy + 14.0 }, FG)?;
                     Self::text(rt, &stats::thousands(*sent), &self.f.table_val, cell(c1, cy, 15.0), FG)?;
                     Self::text(rt, &stats::thousands(*got), &self.f.table_val, cell(c2, cy, 15.0), FG)?;
                 }
-                y + 307.0
-            }
-            Item::RpsTable => {
-                let r = D2D_RECT_F { left: LEFT + 2.0, top: y + 8.0, right: RIGHT, bottom: y + 223.0 };
-                Self::card(rt, &self.f, r, "ROCK PAPER SCISSORS", accent)?;
-                let f = &st.friend;
-                let rows = [("Games played", f.rps_played), ("Wins", f.rps_won), ("Losses", f.rps_lost)];
-                for (i, (name, v)) in rows.iter().enumerate() {
-                    let cy = r.top + 80.0 + i as f32 * 50.0;
-                    Self::text(rt, name, &self.f.label, D2D_RECT_F { left: r.left + 25.0, top: cy - 14.0, right: r.right, bottom: cy + 14.0 }, FG)?;
-                    Self::text(rt, &stats::thousands(*v), &self.f.table_val, D2D_RECT_F { left: RIGHT - 144.0, top: cy - 15.0, right: RIGHT - 4.0, bottom: cy + 15.0 }, FG)?;
-                }
-                y + 233.0
+                y + 206.0
             }
         })
     }
@@ -2076,10 +2059,19 @@ impl SettingsWindow {
         for (i, f) in so.friends.iter().enumerate() {
             let sub = match (&f.np, f.online) {
                 (Some(t), true) => format!("{}  \u{00B7}  \u{266A} {} \u{2014} {}", f.code, t.title, t.artist),
+                (None, true) if f.is_bot => "Companion bot  \u{00B7}  always online".to_string(),
                 (None, true) => format!("{}  \u{00B7}  online", f.code),
                 _ => format!("{}  \u{00B7}  offline", f.code),
             };
-            v.push(Person(f.name.clone(), sub, vec![("Remove", Act::Remove(i))]));
+            let mut btns = Vec::new();
+            if f.online {
+                btns.push(("Poke", Act::PokeFriend(i)));
+                btns.push(("Kiss", Act::KissFriend(i)));
+            }
+            if !f.is_bot {
+                btns.push(("Remove", Act::Remove(i)));
+            }
+            v.push(Person(f.name.clone(), sub, btns));
         }
         v.push(Text("Friends see your name, your Fuzzie and, if shared, the song you play.".into()));
         v
@@ -2303,7 +2295,19 @@ impl SettingsWindow {
             }
             Act::Remove(i) => {
                 if let Some(f) = crate::social::snapshot().friends.get(i) {
-                    crate::social::remove(&f.code);
+                    if !f.is_bot {
+                        crate::social::remove(&f.code);
+                    }
+                }
+            }
+            Act::PokeFriend(i) => {
+                if let Some(f) = crate::social::snapshot().friends.get(i) {
+                    crate::social::poke(&f.code);
+                }
+            }
+            Act::KissFriend(i) => {
+                if let Some(f) = crate::social::snapshot().friends.get(i) {
+                    crate::social::kiss(&f.code);
                 }
             }
             Act::DeleteData | Act::Uninstall => {

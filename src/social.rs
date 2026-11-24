@@ -67,6 +67,17 @@ impl Track {
     }
 }
 
+/// Built-in companion bot code (always online, cannot be removed).
+pub const BOT_CODE: &str = "FUZ-BOT001";
+
+pub fn is_bot(code: &str) -> bool {
+    code == BOT_CODE
+}
+
+pub fn bot_friend() -> Friend {
+    Friend { code: BOT_CODE.into(), name: "Fuzzie Bot".into(), skin: 2, acc: 0, online: true, np: None, is_bot: true }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Friend {
     pub code: String,
@@ -75,6 +86,7 @@ pub struct Friend {
     pub acc: usize,
     pub online: bool,
     pub np: Option<Track>,
+    pub is_bot: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -111,6 +123,7 @@ struct Profile {
 }
 
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
+static NOTICES: OnceLock<Queue> = OnceLock::new();
 static PROFILE: Mutex<Profile> = Mutex::new(Profile { name: String::new(), skin: 0, acc: 0, np: None, np_at: None, share: true });
 static OUT: Mutex<Option<Sender<String>>> = Mutex::new(None);
 static ENABLED: AtomicBool = AtomicBool::new(false);
@@ -127,9 +140,14 @@ fn edit(f: impl FnOnce(&mut State)) {
     CHANGED.store(true, Ordering::Release);
 }
 
-/// A copy of what the UI shows.
+/// A copy of what the UI shows (always includes the built-in Fuzzie Bot).
 pub fn snapshot() -> State {
-    state().lock().map(|s| s.clone()).unwrap_or_default()
+    let mut st = state().lock().map(|s| s.clone()).unwrap_or_default();
+    if !st.friends.iter().any(|f| f.is_bot) {
+        let pos = st.friends.iter().position(|f| !f.online).unwrap_or(st.friends.len());
+        st.friends.insert(pos, bot_friend());
+    }
+    st
 }
 
 /// True once after anything shown changed.
@@ -153,13 +171,46 @@ pub fn decline(code: &str) {
     send(json!({"t": "decline", "code": code}));
 }
 pub fn remove(code: &str) {
+    if is_bot(code) {
+        return;
+    }
     if snapshot().along.as_deref() == Some(code) {
         stop_along();
     }
     send(json!({"t": "remove", "code": code}));
 }
+
 pub fn poke(code: &str) {
+    crate::stats::record_poke(true);
+    if is_bot(code) {
+        bot_reply(false);
+        return;
+    }
     send(json!({"t": "poke", "to": code}));
+}
+
+pub fn kiss(code: &str) {
+    crate::stats::record_kiss(true);
+    if is_bot(code) {
+        bot_reply(true);
+        return;
+    }
+    send(json!({"t": "kiss", "to": code}));
+}
+
+/// Fuzzie Bot replies back with a poke or kiss after a short, natural delay.
+fn bot_reply(is_kiss: bool) {
+    let Some(q) = NOTICES.get().cloned() else { return };
+    let _ = std::thread::Builder::new().name("bot-reply".into()).stack_size(256 * 1024).spawn(move || {
+        std::thread::sleep(Duration::from_millis(1100));
+        if is_kiss {
+            crate::stats::record_kiss(false);
+            notice(&q, "Fuzzie Bot sent you a kiss!".into(), "Beep boop \u{2665}".into(), Some(crate::mascot::Look::bot()));
+        } else {
+            crate::stats::record_poke(false);
+            notice(&q, "Fuzzie Bot poked you back!".into(), "Beep boop!".into(), Some(crate::mascot::Look::bot()));
+        }
+    });
 }
 
 /// Starts or stops listening along with `code`.
@@ -262,6 +313,7 @@ pub fn set_enabled(on: bool) {
 
 /// Starts the connection thread; notices go to `notices`.
 pub fn start(notices: Queue) {
+    let _ = NOTICES.set(notices.clone());
     let _ = std::thread::Builder::new().name("social".into()).stack_size(512 * 1024).spawn(move || {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -425,7 +477,7 @@ fn post(url: &str, body: &str) -> Option<String> {
     Some(resp.Content().ok()?.ReadAsStringAsync().ok()?.join().ok()?.to_string())
 }
 
-fn notice(q: &Queue, title: String, body: String, fox: Option<(usize, usize)>) {
+fn notice(q: &Queue, title: String, body: String, fox: Option<crate::mascot::Look>) {
     if let Ok(mut q) = q.lock() {
         q.push_back(Notice { app: "Fuzzie friends".into(), title, body, fox });
     }
@@ -458,6 +510,7 @@ fn handle(text: &str, q: &Queue) {
                             skin: n(&f["skin"]) as usize,
                             acc: n(&f["acc"]) as usize,
                             online: f["online"].as_bool() == Some(true),
+                            is_bot: false,
                             np: f["np"].as_object().map(|_| {
                                 let np = &f["np"];
                                 // How long ago the position was sampled, by the relay's clock.
@@ -512,7 +565,12 @@ fn handle(text: &str, q: &Queue) {
             }
         }
         Some("poke") => {
-            notice(q, format!("{} poked you", s(&m["name"])), String::new(), Some((n(&m["skin"]) as usize, n(&m["acc"]) as usize)));
+            crate::stats::record_poke(false);
+            notice(q, format!("{} poked you", s(&m["name"])), String::new(), Some(crate::mascot::Look::new(0, n(&m["skin"]) as usize, n(&m["acc"]) as usize, 0)));
+        }
+        Some("kiss") => {
+            crate::stats::record_kiss(false);
+            notice(q, format!("{} sent you a kiss", s(&m["name"])), String::new(), Some(crate::mascot::Look::new(0, n(&m["skin"]) as usize, n(&m["acc"]) as usize, 0)));
         }
         Some("join") => notice(q, format!("{} is listening along", s(&m["name"])), String::new(), None),
         Some("leave") => notice(q, format!("{} stopped listening along", s(&m["name"])), String::new(), None),
@@ -527,7 +585,7 @@ fn handle(text: &str, q: &Queue) {
 /// Sample friends for `--snapshot` pictures.
 pub fn demo() {
     let t = |title: &str, artist: &str| Some(Track { title: title.into(), artist: artist.into(), playing: true, pos: 60_000, dur: 200_000, at: Some(Instant::now()) });
-    let f = |name: &str, code: &str, skin, acc, online, np| Friend { code: code.into(), name: name.into(), skin, acc, online, np };
+    let f = |name: &str, code: &str, skin, acc, online, np| Friend { code: code.into(), name: name.into(), skin, acc, online, np, is_bot: false };
     edit(|s| {
         s.conn = Conn::Online;
         s.code = "FUZ-A4G7B9".into();

@@ -27,7 +27,6 @@ pub struct SpeciesInfo {
     pub name: &'static str,
     pub tag: &'static str,
     pub body_w: f32,
-    pub arm_x: f32,
     pub eye_x: f32,
     pub eye_y: f32,
     pub eye_rx: f32,
@@ -36,11 +35,11 @@ pub struct SpeciesInfo {
 }
 
 pub const SPECIES: &[SpeciesInfo] = &[
-    SpeciesInfo { id: Species::Fox, name: "Fluffy Fox", tag: "Sleek · Bushy tail", body_w: 0.34, arm_x: 0.25, eye_x: 0.165, eye_y: 0.04, eye_rx: 0.068, eye_ry: 0.078, desk_y: 0.45 },
-    SpeciesInfo { id: Species::Cat, name: "Mochi Cat", tag: "Squishy · Toe beans", body_w: 0.40, arm_x: 0.29, eye_x: 0.175, eye_y: 0.05, eye_rx: 0.072, eye_ry: 0.080, desk_y: 0.45 },
-    SpeciesInfo { id: Species::Bunny, name: "Puff Bunny", tag: "Long ears · Cotton tail", body_w: 0.36, arm_x: 0.24, eye_x: 0.165, eye_y: 0.055, eye_rx: 0.070, eye_ry: 0.082, desk_y: 0.45 },
-    SpeciesInfo { id: Species::Shiba, name: "Chibi Shiba", tag: "Plump cheeks · Curly tail", body_w: 0.41, arm_x: 0.29, eye_x: 0.180, eye_y: 0.04, eye_rx: 0.066, eye_ry: 0.074, desk_y: 0.45 },
-    SpeciesInfo { id: Species::RedPanda, name: "Red Panda", tag: "Ringed tail · Teddy ears", body_w: 0.39, arm_x: 0.28, eye_x: 0.175, eye_y: 0.04, eye_rx: 0.068, eye_ry: 0.076, desk_y: 0.45 },
+    SpeciesInfo { id: Species::Fox, name: "Fluffy Fox", tag: "Sleek · Bushy tail", body_w: 0.34, eye_x: 0.165, eye_y: 0.04, eye_rx: 0.068, eye_ry: 0.078, desk_y: 0.45 },
+    SpeciesInfo { id: Species::Cat, name: "Mochi Cat", tag: "Squishy · Toe beans", body_w: 0.40, eye_x: 0.175, eye_y: 0.05, eye_rx: 0.072, eye_ry: 0.080, desk_y: 0.45 },
+    SpeciesInfo { id: Species::Bunny, name: "Puff Bunny", tag: "Long ears · Cotton tail", body_w: 0.36, eye_x: 0.165, eye_y: 0.055, eye_rx: 0.070, eye_ry: 0.082, desk_y: 0.45 },
+    SpeciesInfo { id: Species::Shiba, name: "Chibi Shiba", tag: "Plump cheeks · Curly tail", body_w: 0.41, eye_x: 0.180, eye_y: 0.04, eye_rx: 0.066, eye_ry: 0.074, desk_y: 0.45 },
+    SpeciesInfo { id: Species::RedPanda, name: "Red Panda", tag: "Ringed tail · Teddy ears", body_w: 0.39, eye_x: 0.175, eye_y: 0.04, eye_rx: 0.068, eye_ry: 0.076, desk_y: 0.45 },
 ];
 
 pub fn get(i: usize) -> &'static SpeciesInfo {
@@ -149,11 +148,11 @@ const TAIL_REDPANDA: &[S] = &[
 ];
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body: Matrix3x2, wag_deg: f32, sleeping: bool) -> Result<()> {
-    let sleep_off = if sleeping { 0.03 } else { 0.0 };
+pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body: Matrix3x2, wag_deg: f32, sleep_mix: f32) -> Result<()> {
+    let sleep_off = sleep_mix * 0.03;
     match sp {
         Species::Fox => {
-            let m = rot(wag_deg + if sleeping { 12.0 } else { 0.0 }, 0.0, 0.0) * tr(0.24, 0.36 + sleep_off) * body;
+            let m = rot(wag_deg + sleep_mix * 12.0, 0.0, 0.0) * tr(0.24, 0.36 + sleep_off) * body;
             let tail = p.path("sp_tail_fox", TAIL_FOX)?;
             let tip = p.clip("sp_tail_fox_tip", &tail, |p| build_path(p.f, TAIL_FOX_TIP))?;
             p.fill_with(m, &tail, fur);
@@ -162,7 +161,7 @@ pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
             p.stroke(m, &tail, p.line, 1.0, p.lw);
         }
         Species::Cat => {
-            let m = rot(wag_deg * 1.15 + if sleeping { 14.0 } else { 0.0 }, 0.0, 0.0) * tr(0.30, 0.36 + sleep_off) * body;
+            let m = rot(wag_deg * 1.15 + sleep_mix * 14.0, 0.0, 0.0) * tr(0.30, 0.36 + sleep_off) * body;
             let tail = p.path("sp_tail_cat", TAIL_CAT)?;
             p.fill_with(m, &tail, fur);
             let tip = p.clip_el("sp_tail_cat_tip", &tail, 0.26, -0.31, 0.10, 0.10)?;
@@ -176,7 +175,7 @@ pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
             p.stroke(m, &tail, p.line, 1.0, p.lw);
         }
         Species::Shiba => {
-            let m = rot(wag_deg * 0.75 + if sleeping { 9.0 } else { 0.0 }, 0.0, 0.0) * tr(0.33, 0.32 + sleep_off) * body;
+            let m = rot(wag_deg * 0.75 + sleep_mix * 9.0, 0.0, 0.0) * tr(0.33, 0.32 + sleep_off) * body;
             let outer = p.shape("sp_tail_shiba", |p| p.ellipse_geo(0.12, -0.04, 0.17, 0.17))?;
             p.fill_with(m, &outer, fur);
             p.stroke(m, &outer, p.line, 1.0, p.lw);
@@ -185,7 +184,7 @@ pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
             p.stroke(m, &curl, p.line, 0.85, p.lw * 0.75);
         }
         Species::RedPanda => {
-            let m = rot(wag_deg * 0.95 + if sleeping { 12.0 } else { 0.0 }, 0.0, 0.0) * tr(0.28, 0.36 + sleep_off) * body;
+            let m = rot(wag_deg * 0.95 + sleep_mix * 12.0, 0.0, 0.0) * tr(0.28, 0.36 + sleep_off) * body;
             let tail = p.path("sp_tail_rp", TAIL_REDPANDA)?;
             p.fill_with(m, &tail, fur);
             if !p.small {
@@ -209,22 +208,18 @@ pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
 
 // ---------------------------------------------------------------- bodies
 
-pub(super) fn draw_body(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body: Matrix3x2, sleeping: bool) -> Result<()> {
+#[allow(clippy::too_many_arguments)]
+pub(super) fn draw_body(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body: Matrix3x2, sleep_mix: f32, yarn_mix: f32) -> Result<()> {
     let info = SPECIES.iter().find(|s| s.id == sp).unwrap();
-    let w = info.body_w * if sleeping { 1.07 } else { 1.0 };
+    let w = info.body_w;
     let y_bot = info.desk_y;
-    let y_top = if sleeping { 0.21 } else { 0.16 };
-    let key: &'static str = match (sp, sleeping) {
-        (Species::Fox, false) => "sp_body_fox",
-        (Species::Fox, true) => "sp_body_fox_s",
-        (Species::Cat, false) => "sp_body_cat",
-        (Species::Cat, true) => "sp_body_cat_s",
-        (Species::Bunny, false) => "sp_body_bunny",
-        (Species::Bunny, true) => "sp_body_bunny_s",
-        (Species::Shiba, false) => "sp_body_shiba",
-        (Species::Shiba, true) => "sp_body_shiba_s",
-        (Species::RedPanda, false) => "sp_body_rp",
-        (Species::RedPanda, true) => "sp_body_rp_s",
+    let y_top = 0.16;
+    let key: &'static str = match sp {
+        Species::Fox => "sp_body_fox",
+        Species::Cat => "sp_body_cat",
+        Species::Bunny => "sp_body_bunny",
+        Species::Shiba => "sp_body_shiba",
+        Species::RedPanda => "sp_body_rp",
     };
     let g = p.shape(key, |p| {
         let k = if sp == Species::Fox { 1.03 } else { 1.10 };
@@ -239,25 +234,53 @@ pub(super) fn draw_body(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
             ],
         )
     })?;
-    p.fill_with(body, &g, fur);
+    // Smoothly widen & settle into a loaf when sleeping, or puff the belly up during yarn play.
+    let bx = 1.0 + sleep_mix * 0.07 + yarn_mix * 0.10;
+    let by = 1.0 - sleep_mix * 0.07 + yarn_mix * 0.05;
+    let bm = tr(0.0, -y_bot) * Matrix3x2::scale(bx, by) * tr(0.0, y_bot) * body;
+    p.fill_with(bm, &g, fur);
 
     // Chest ruff / belly patch (warm cream for contrast under chin and between arms).
-    if sp == Species::Fox {
+    if sp == Species::Fox && yarn_mix < 0.5 {
         let ruff = p.path("sp_ruff_fox", &[M(-0.17, 0.20), Q(-0.15, 0.34, -0.07, 0.37), Q(0.0, 0.43, 0.07, 0.37), Q(0.15, 0.34, 0.17, 0.20), Z])?;
-        p.fill(body, &ruff, sk.cream, 0.96);
+        p.fill(bm, &ruff, sk.cream, 0.96);
     } else {
-        let rx = if sp == Species::RedPanda { 0.18 } else { w * 0.54 };
-        p.fill_el(body, 0.0, 0.37, rx, 0.10, sk.cream, 0.92);
+        let rx = (if sp == Species::RedPanda { 0.18 } else { w * 0.54 }) * (1.0 + yarn_mix * 0.22);
+        let ry = 0.10 + yarn_mix * 0.055;
+        p.fill_el(bm, 0.0, 0.36 - yarn_mix * 0.04, rx, ry, sk.cream, 0.94);
     }
 
     // Soft under-chin ambient occlusion separating head from torso.
     if !p.small {
-        p.at(body);
-        let sh = p.radial(0.0, 0.25, 0.30, 0.13, &[(0.0, INK, 0.26), (1.0, INK, 0.0)], 1.0)?;
-        p.fill_with(body, &g, &sh);
+        p.at(bm);
+        let sh = p.radial(0.0, 0.25, 0.30, 0.13, &[(0.0, INK, 0.26 * (1.0 - yarn_mix * 0.4)), (1.0, INK, 0.0)], 1.0)?;
+        p.fill_with(bm, &g, &sh);
     }
 
-    p.stroke(body, &g, p.line, 1.0, p.lw);
+    p.stroke(bm, &g, p.line, 1.0, p.lw);
+
+    // Cute little hind feet with pink toe-beans peeking out when lying on its back!
+    if yarn_mix > 0.05 {
+        let paw_c = match sp {
+            Species::RedPanda => mix(sk.fur, INK, 0.68),
+            Species::Fox => mix(sk.fur, INK, 0.64),
+            _ => sk.cream,
+        };
+        let pad = [1.0, 0.62, 0.72];
+        for side in [-1.0f32, 1.0] {
+            let hx = side * (0.28 + yarn_mix * 0.10);
+            let hy = y_bot - 0.035 - yarn_mix * 0.025;
+            let hm = Matrix3x2::scale(yarn_mix, yarn_mix) * rot(side * -18.0, 0.0, 0.0) * tr(hx, hy) * body;
+            p.fill_el(hm, 0.0, 0.0, 0.088, 0.068, paw_c, 1.0);
+            p.ring(hm, 0.0, 0.0, 0.088, 0.068, p.line, 1.0, p.lw);
+            if !p.small {
+                p.fill_el(hm, 0.0, 0.012, 0.032, 0.024, pad, 0.9);
+                for tx in [-0.032f32, 0.0, 0.032] {
+                    p.fill_el(hm, tx, -0.024, 0.013, 0.014, pad, 0.9);
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -277,8 +300,8 @@ const EAR_SHIBA: &[S] = &[M(-0.14, 0.04), B(-0.10, -0.15, 0.02, -0.30, 0.11, -0.
 const EAR_SHIBA_IN: &[S] = &[M(-0.07, 0.02), B(-0.04, -0.10, 0.03, -0.20, 0.09, -0.18), B(0.13, -0.16, 0.14, -0.05, 0.08, 0.06), Z];
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw_ears(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, head: Matrix3x2, ear_deg: [f32; 2], sleeping: bool) -> Result<()> {
-    let droop = if sleeping { if sp == Species::Bunny { 24.0 } else { 15.0 } } else { 0.0 };
+pub(super) fn draw_ears(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, head: Matrix3x2, ear_deg: [f32; 2], sleep_mix: f32) -> Result<()> {
+    let droop = sleep_mix * if sp == Species::Bunny { 24.0 } else { 15.0 };
     for (idx, side) in [-1.0f32, 1.0].into_iter().enumerate() {
         let deg = ear_deg[idx] + droop;
         let mirror_x = if side < 0.0 { flip() } else { Matrix3x2::identity() };
@@ -438,99 +461,65 @@ pub(super) fn draw_whiskers(p: &Pen, sp: Species, head: Matrix3x2) {
 // ---------------------------------------------------------------- Bongo arms & paws
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw_arms(p: &Pen, sp: Species, sk: &Skin, body: Matrix3x2, paws: Option<[f32; 2]>, sleeping: bool, size: f32) -> Result<()> {
+pub(super) fn draw_arms(p: &Pen, sp: Species, sk: &Skin, body: Matrix3x2, paws: Option<[f32; 2]>, sleep_mix: f32, yarn_mix: f32, size: f32) -> Result<()> {
     let info = SPECIES.iter().find(|s| s.id == sp).unwrap();
     let dark_socks = matches!(sp, Species::RedPanda | Species::Fox);
-    let arm_c = match sp {
-        Species::RedPanda => mix(sk.fur, INK, 0.68),
-        Species::Fox => mix(sk.fur, INK, 0.18),
-        _ => mix(sk.fur, sk.cream, 0.35),
-    };
     let paw_c = match sp {
         Species::RedPanda => mix(sk.fur, INK, 0.68),
         Species::Fox => mix(sk.fur, INK, 0.64),
         _ => sk.cream,
     };
-    let pad_c = match sp {
-        Species::RedPanda => [0.88, 0.70, 0.64],
-        Species::Shiba => [0.55, 0.37, 0.27],
-        _ => [1.0, 0.62, 0.72],
-    };
+    let pad_pink = [1.0, 0.62, 0.72];
 
     for (i, side) in [-1.0f32, 1.0].into_iter().enumerate() {
-        let down = if sleeping {
-            1.0
-        } else if let Some(arr) = paws {
-            arr[i]
-        } else {
-            1.0
-        };
-        let (sx, sy) = ((info.arm_x + 0.02) * side, 0.345);
-        let (px, py) = if sleeping {
-            // Tucked snugly together under the chin as a sleeping pillow!
-            (0.15 * side, info.desk_y - 0.015)
-        } else if paws.is_some() {
-            let x_up = (info.arm_x + 0.06) * side;
-            let y_up = 0.24;
-            let x_dn = (info.arm_x + 0.02) * side;
-            let y_dn = info.desk_y - 0.01;
-            (x_up + (x_dn - x_up) * down, y_up + (y_dn - y_up) * down)
-        } else {
-            // Resting neatly on the bottom edge in Notch / Settings.
-            (0.20 * side, info.desk_y - 0.015)
-        };
+        let tap = if sleep_mix > 0.5 { 0.0 } else { paws.map_or(0.0, |arr| arr[i]) * (1.0 - sleep_mix) };
+        // Resting / taskbar-tapping paw coordinates.
+        let rest_x = 0.20 * side + tap * 0.025 * side;
+        let rest_y = info.desk_y - 0.015 + tap * 0.085;
+        // Sleeping pillow-tucked paw coordinates.
+        let sleep_x = 0.15 * side;
+        let sleep_y = info.desk_y - 0.015;
+        // Lying-on-back yarn-batting paw coordinates (raised paws bat UPWARD from the sides, never covering eyes!).
+        let yarn_x = 0.30 * side - tap * 0.03 * side;
+        let yarn_y = 0.25 - tap * 0.13;
 
-        let arm_w = match sp {
-            Species::Bunny => 0.110,
-            Species::Fox => 0.115,
-            _ => 0.125,
-        };
-        // Articulated foreleg sleeve only in active Bongo mode (clean resting paws in Notch/Settings).
-        if paws.is_some() && !sleeping {
-            p.seg(body, sx, sy, px, py, p.line, 1.0, arm_w + p.lw * 1.6);
-            p.seg(body, sx, sy, px, py, arm_c, 1.0, arm_w);
-        }
+        let ax = rest_x * (1.0 - sleep_mix) + sleep_x * sleep_mix;
+        let ay = rest_y * (1.0 - sleep_mix) + sleep_y * sleep_mix;
+        let px = ax * (1.0 - yarn_mix) + yarn_x * yarn_mix;
+        let py = ay * (1.0 - yarn_mix) + yarn_y * yarn_mix;
 
         let base_rx = if sp == Species::Bunny { 0.102 } else { 0.114 };
-        let base_ry = if sp == Species::Bunny { 0.086 } else { 0.092 };
-        let (rx, ry) = if paws.is_none() && !sleeping {
-            (base_rx, 0.072)
-        } else {
-            (base_rx * (1.0 + down * 0.14), base_ry * (1.0 - down * 0.22))
-        };
-        let paw_deg = if paws.is_none() && !sleeping {
-            0.0
-        } else {
-            side * (-18.0 * (1.0 - down) + 3.5 * down)
-        };
+        let (rx, ry) = (base_rx * (1.0 + tap * 0.10), (0.072 + yarn_mix * 0.022) * (1.0 - tap * 0.10));
+        let paw_deg = side * tap * (6.0 - yarn_mix * 18.0) - side * yarn_mix * 16.0;
         let pm = rot(paw_deg, 0.0, 0.0) * tr(px, py) * body;
 
         p.fill_el(pm, 0.0, 0.0, rx, ry, paw_c, 1.0);
-        if dark_socks && !p.small && (paws.is_none() || sleeping || down > 0.55) {
-            // Subtle warm rim arc on the upper edge of dark resting/slapped paws.
-            p.seg(pm, -rx * 0.42, -ry * 0.52, rx * 0.42, -ry * 0.52, WHITE, 0.28, 0.018);
+        if dark_socks && !p.small && yarn_mix < 0.5 {
+            // Subtle warm rim arc on the upper edge of dark paws.
+            p.seg(pm, -rx * 0.42, -ry * 0.52, rx * 0.42, -ry * 0.52, WHITE, 0.28 * (1.0 - yarn_mix * 2.0), 0.018);
         }
         p.ring(pm, 0.0, 0.0, rx, ry, p.line, 1.0, p.lw);
 
         if !p.small {
-            if paws.is_some() && !sleeping && down < 0.55 {
-                let beans = 1.0 - down / 0.55;
-                p.fill_el(pm, 0.0, 0.016, 0.038, 0.027, pad_c, beans * 0.95);
-                for (bx, by) in [(-0.042, -0.024), (0.0, -0.036), (0.042, -0.024)] {
-                    p.fill_el(pm, bx, by, 0.016, 0.016, pad_c, beans * 0.95);
+            if yarn_mix > 0.35 {
+                // Upturned pink toe beans while batting the yarn ball!
+                let pa = ((yarn_mix - 0.35) / 0.65).clamp(0.0, 1.0);
+                p.fill_el(pm, 0.0, 0.016, 0.036, 0.026, pad_pink, 0.92 * pa);
+                for tx in [-0.036f32, 0.0, 0.036] {
+                    p.fill_el(pm, tx, -0.022, 0.015, 0.016, pad_pink, 0.92 * pa);
                 }
             } else {
                 let crease = if dark_socks { WHITE } else { p.line };
-                let ca = if dark_socks { 0.28 } else { 0.55 };
+                let ca = (if dark_socks { 0.28 } else { 0.55 }) * (1.0 - yarn_mix * 2.5).max(0.0);
                 for tx in [-0.032f32, 0.032] {
-                    p.seg(pm, tx, ry * 0.30, tx, ry * 0.80, crease, ca, p.lw * 0.55);
+                    p.seg(pm, tx, ry * 0.25, tx, ry * 0.80, crease, ca, p.lw * 0.55);
                 }
             }
         }
 
-        if paws.is_some() && !sleeping && down > 0.5 {
-            let a = (down - 0.5) * 2.0;
-            tap_burst(p, px, py, side, size, a)?;
+        if paws.is_some() && sleep_mix < 0.3 && yarn_mix < 0.3 && tap > 0.5 {
+            let a = (tap - 0.5) * 2.0 * (1.0 - yarn_mix * 3.0).max(0.0);
+            tap_burst(p, px, py + 0.01, side, size, a)?;
         }
     }
     Ok(())

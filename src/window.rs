@@ -1171,6 +1171,11 @@ impl App {
                     crate::social::poke(&f.code);
                 }
             }
+            Hit::Kiss(i) => {
+                if let Some(f) = crate::social::snapshot().friends.get(i) {
+                    crate::social::kiss(&f.code);
+                }
+            }
             Hit::Along(i) => {
                 if let Some(f) = crate::social::snapshot().friends.get(i) {
                     crate::social::toggle_along(&f.code);

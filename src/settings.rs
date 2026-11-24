@@ -183,7 +183,7 @@ impl Default for Settings {
             glass: false,
             show_mascot: true,
             nap_enabled: true,
-            nap_after_secs: 300,
+            nap_after_secs: 60,
             nap_while_music: true,
             desk_fox: true,
             desk_x: -1,

@@ -155,8 +155,9 @@ pub enum Hit {
     Cancel(usize),
     /// Requests page tab: 0 received, 1 sent.
     ReqTab(u8),
-    /// Poke the n-th friend on the friends page / listen along with them.
+    /// Poke or kiss the n-th friend on the friends page / listen along with them.
     Poke(usize),
+    Kiss(usize),
     Along(usize),
 }
 
@@ -668,12 +669,12 @@ impl Renderer {
                     // Fuzzie (or the album art) on the left, the note on the right,
                     // and the line centred between them.
                     if s.mascot.is_some() {
-                        self.mascot(s, x0 + 22.0, COLLAPSED_H / 2.0 + 1.0, 20.0, a_clock)?;
+                        self.mascot(s, x0 + 25.0, COLLAPSED_H / 2.0 + 1.0, 18.0, a_clock)?;
                     } else {
                         let art = D2D_RECT_F { left: x0 + 12.0, top: 6.0, right: x0 + 32.0, bottom: 26.0 };
                         self.art(s.media.art.as_deref(), art, 5.0, a_clock)?;
                     }
-                    self.note(x0 + w - 24.0, COLLAPSED_H / 2.0, s.theme.accent, a_clock)?;
+                    self.note(x0 + w - 25.0, COLLAPSED_H / 2.0, s.theme.accent, a_clock)?;
                     let (lo, hi) = (x0 + 40.0, x0 + w - 40.0);
                     let mid = (lo + hi) / 2.0;
                     let room = (hi - lo).max(10.0);
@@ -708,7 +709,7 @@ impl Renderer {
                     let r = D2D_RECT_F { left: mid - clock_w / 2.0 - 4.0, top: 0.0, right: mid + clock_w / 2.0 + 4.0, bottom: COLLAPSED_H };
                     self.text(s.clock, &self.f.clock_small, r, self.fg(), a_clock)?;
                     if s.mascot.is_some() {
-                        self.mascot(s, x0 + 22.0, COLLAPSED_H / 2.0 + 1.0, 20.0, a_clock)?;
+                        self.mascot(s, x0 + 24.0, COLLAPSED_H / 2.0 + 1.0, 18.0, a_clock)?;
                     } else if s.media.playing {
                         let art = D2D_RECT_F { left: x0 + 12.0, top: 6.0, right: x0 + 32.0, bottom: 26.0 };
                         self.art(s.media.art.as_deref(), art, 5.0, a_clock)?;
@@ -923,8 +924,8 @@ impl Renderer {
     // ---- expanded: header and page dots ----
 
     fn header(&self, s: &Scene, x0: f32, w: f32, a: f32, hits: &mut Hits) -> Result<()> {
-        let date_x = if s.mascot.is_some() { 50.0 } else { 22.0 };
-        self.mascot(s, x0 + 30.0, 23.0, 26.0, a)?;
+        let date_x = if s.mascot.is_some() { 58.0 } else { 22.0 };
+        self.mascot(s, x0 + 30.0, 23.0, 25.0, a)?;
         let date = D2D_RECT_F { left: x0 + date_x, top: 9.0, right: x0 + 260.0, bottom: 35.0 };
         self.text(s.date, &self.f.date, date, self.dim(), a)?;
         let clock = D2D_RECT_F { left: x0 + w - 190.0, top: 9.0, right: x0 + w - 48.0, bottom: 35.0 };
@@ -1655,7 +1656,8 @@ impl Renderer {
                 self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), 0.04 * a)?);
             }
             let fa = if f.online { a } else { a * 0.45 };
-            mascot::draw_still(&self.rt, &self.factory, mascot::Look::new(0, f.skin, f.acc, 0), lx + 22.0, cy + 1.0, 17.0, fa, !f.online, 0.0)?;
+            let look = if f.is_bot { mascot::Look::bot() } else { mascot::Look::new(0, f.skin, f.acc, 0) };
+            mascot::draw_still(&self.rt, &self.factory, look, lx + 22.0, cy + 1.0, 17.0, fa, !f.online, 0.0)?;
             if f.online {
                 unsafe {
                     let e = D2D1_ELLIPSE { point: Vector2 { X: lx + 34.0, Y: cy + 10.0 }, radiusX: 3.5, radiusY: 3.5 };
@@ -1679,6 +1681,7 @@ impl Renderer {
                 Ok(())
             };
             if f.online {
+                button("Kiss", Hit::Kiss(i), false)?;
                 button("Poke", Hit::Poke(i), false)?;
                 if f.np.is_some() {
                     let along = so.along.as_deref() == Some(f.code.as_str());
@@ -1689,6 +1692,7 @@ impl Renderer {
             let sub = match (&f.np, f.online) {
                 (Some(t), true) if t.artist.is_empty() => format!("\u{266A} {}", t.title),
                 (Some(t), true) => format!("\u{266A} {} \u{2014} {}", t.title, t.artist),
+                (None, true) if f.is_bot => "Online \u{00B7} Companion bot".to_string(),
                 (None, true) => "Online".to_string(),
                 _ => "Offline".to_string(),
             };
@@ -1920,8 +1924,8 @@ impl Renderer {
                     let e = D2D1_ELLIPSE { point: Vector2 { X: cx, Y: cy }, radiusX: r, radiusY: r };
                     self.rt.FillEllipse(&e, &self.brush(accent, 0.22 * a)?);
                 }
-                if let Some((skin, acc)) = n.fox {
-                    mascot::draw_still(&self.rt, &self.factory, mascot::Look::new(0, skin, acc, 0), cx, cy + 1.0, 22.0, a, false, 0.0)?;
+                if let Some(look) = n.fox {
+                    mascot::draw_still(&self.rt, &self.factory, look, cx, cy + 1.0, 22.0, a, false, 0.0)?;
                 } else {
                     let bell = D2D_RECT_F { left: cx - r, top: cy - r, right: cx + r, bottom: cy + r };
                     self.text("\u{EA8F}", &self.f.icons_small, bell, accent, a)?;

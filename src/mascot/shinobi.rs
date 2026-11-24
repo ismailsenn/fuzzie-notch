@@ -166,15 +166,15 @@ impl Lock {
         (x + s * a + c * b, y - c * a + s * b)
     }
 
-    /// A curved, pointed lock whose root is buried a little behind its base.
+    /// A plush, softly curved chibi hair tuft whose root tucks cleanly behind its base.
     fn path(self) -> Vec<S> {
         let Lock(_, _, _, len, w, bend) = self;
         let l0 = self.at(0.0, -w);
         let r0 = self.at(0.0, w);
         let tip = self.at(len, bend);
-        let cl = self.at(len * 0.55, -w * 0.8 + bend * 0.5);
-        let cr = self.at(len * 0.55, w * 0.8 + bend * 0.5);
-        let root = self.at(-0.07, 0.0);
+        let cl = self.at(len * 0.62, -w * 0.92 + bend * 0.45);
+        let cr = self.at(len * 0.62, w * 0.92 + bend * 0.45);
+        let root = self.at(-0.08, 0.0);
         vec![M(l0.0, l0.1), Q(cl.0, cl.1, tip.0, tip.1), Q(cr.0, cr.1, r0.0, r0.1), L(root.0, root.1), Z]
     }
 }
@@ -198,91 +198,95 @@ fn rays(cx: f32, cy: f32, v: &[(f32, f32, f32, f32)], mirrored: bool) -> Vec<Loc
     out
 }
 
-/// The cap of hair over the forehead, hugging the top of the head (it covers
-/// the roots of the ears); the bangs hang from it.
-const CAP: &[S] = &[M(-0.47, -0.02), Q(-0.5, -0.28, -0.24, -0.335), Q(0.0, -0.375, 0.24, -0.335), Q(0.5, -0.28, 0.47, -0.02), Q(0.36, -0.2, 0.0, -0.21), Q(-0.36, -0.2, -0.47, -0.02), Z];
-/// The cap parted in the middle.
+/// Soft chibi hair cap hugging the crown of the head while leaving the ears fluffy and clear.
+const CAP: &[S] = &[M(-0.44, -0.06), Q(-0.46, -0.29, -0.22, -0.345), Q(0.0, -0.385, 0.22, -0.345), Q(0.46, -0.29, 0.44, -0.06), Q(0.32, -0.22, 0.0, -0.23), Q(-0.32, -0.22, -0.44, -0.06), Z];
+/// The cap with a gentle center part.
 const CAP_PART: &[S] = &[
-    M(-0.47, -0.02),
-    Q(-0.5, -0.28, -0.24, -0.335),
-    Q(0.0, -0.375, 0.24, -0.335),
-    Q(0.5, -0.28, 0.47, -0.02),
-    Q(0.38, -0.2, 0.06, -0.24),
-    L(0.0, -0.29),
-    L(-0.06, -0.24),
-    Q(-0.38, -0.2, -0.47, -0.02),
+    M(-0.44, -0.06),
+    Q(-0.46, -0.29, -0.22, -0.345),
+    Q(0.0, -0.385, 0.22, -0.345),
+    Q(0.46, -0.29, 0.44, -0.06),
+    Q(0.34, -0.22, 0.055, -0.255),
+    L(0.0, -0.305),
+    L(-0.055, -0.255),
+    Q(-0.34, -0.22, -0.44, -0.06),
     Z,
 ];
 
-/// Hair behind the head and ears: a mass and short, chunky locks.
+/// Soft chibi hair behind the head and ears: plush volume with gentle, rounded tufts.
 fn back_hair(h: Hair) -> Vec<Vec<S>> {
-    let top = oval(0.0, -0.14, 0.42, 0.27);
+    let top = oval(0.0, -0.15, 0.39, 0.24);
     let (mass, locks) = match h {
-        Hair::Spiky => (top, rays(0.0, -0.12, &[(0.0, 0.57, 0.12, 0.03), (26.0, 0.57, 0.12, 0.06), (56.0, 0.55, 0.12, 0.07), (88.0, 0.5, 0.11, 0.06), (116.0, 0.42, 0.1, 0.05)], true)),
-        Hair::Flash => (top, rays(0.0, -0.12, &[(0.0, 0.56, 0.12, 0.0), (28.0, 0.57, 0.12, 0.07), (60.0, 0.55, 0.12, 0.08), (92.0, 0.5, 0.11, 0.07)], true)),
-        Hair::Swept => (top, rays(0.02, -0.12, &[(-80.0, 0.46, 0.11, -0.05), (-45.0, 0.5, 0.11, -0.04), (-10.0, 0.54, 0.12, 0.03), (22.0, 0.57, 0.12, 0.07), (52.0, 0.6, 0.12, 0.09), (82.0, 0.57, 0.12, 0.09), (110.0, 0.48, 0.11, 0.07)], false)),
-        Hair::Leaning => (top, rays(0.0, -0.12, &[(-90.0, 0.46, 0.11, -0.05), (-62.0, 0.58, 0.12, -0.08), (-36.0, 0.64, 0.12, -0.09), (-10.0, 0.6, 0.12, -0.08), (18.0, 0.52, 0.11, -0.06), (50.0, 0.45, 0.1, -0.04), (85.0, 0.42, 0.1, -0.03)], false)),
-        Hair::Mane => (oval(0.0, -0.04, 0.5, 0.4), rays(0.0, -0.04, &[(0.0, 0.6, 0.13, 0.03), (28.0, 0.62, 0.13, 0.06), (58.0, 0.63, 0.13, 0.08), (90.0, 0.64, 0.13, 0.08), (122.0, 0.62, 0.13, 0.07), (152.0, 0.56, 0.12, 0.05)], true)),
-        Hair::Short => (oval(0.0, -0.14, 0.42, 0.26), rays(0.0, -0.12, &[(0.0, 0.48, 0.11, 0.02), (28.0, 0.48, 0.11, 0.04), (58.0, 0.47, 0.11, 0.05), (90.0, 0.44, 0.1, 0.05)], true)),
-        Hair::Straight | Hair::Parted => (top, rays(0.0, -0.12, &[(40.0, 0.5, 0.12, 0.03), (80.0, 0.48, 0.12, 0.04)], true)),
-        Hair::Sharp => (top, rays(0.0, -0.12, &[(0.0, 0.6, 0.085, 0.0), (18.0, 0.58, 0.085, 0.02), (38.0, 0.57, 0.085, 0.03), (60.0, 0.56, 0.085, 0.03), (84.0, 0.52, 0.085, 0.03), (108.0, 0.44, 0.08, 0.02)], true)),
+        // Naruto: soft bouncy golden tufts peeking gently around the crown.
+        Hair::Spiky => (top, rays(0.0, -0.13, &[(0.0, 0.46, 0.115, 0.03), (30.0, 0.47, 0.115, 0.05), (64.0, 0.46, 0.11, 0.06), (96.0, 0.43, 0.1, 0.05)], true)),
+        // Minato: breezy swept-back golden tufts.
+        Hair::Flash => (top, rays(0.0, -0.13, &[(0.0, 0.47, 0.115, 0.0), (32.0, 0.49, 0.115, 0.07), (66.0, 0.48, 0.11, 0.07), (98.0, 0.44, 0.1, 0.06)], true)),
+        // Sasuke: iconic duck-tail flair sweeping gently to the right.
+        Hair::Swept => (top, rays(0.02, -0.13, &[(-74.0, 0.42, 0.105, -0.04), (-36.0, 0.45, 0.11, -0.03), (0.0, 0.47, 0.115, 0.03), (32.0, 0.51, 0.115, 0.07), (66.0, 0.53, 0.115, 0.08), (96.0, 0.48, 0.11, 0.07)], false)),
+        // Kakashi: playful silver-white tilt leaning to the left.
+        Hair::Leaning => (top, rays(0.0, -0.13, &[(-84.0, 0.44, 0.105, -0.05), (-56.0, 0.53, 0.115, -0.08), (-28.0, 0.55, 0.115, -0.08), (0.0, 0.5, 0.11, -0.07), (32.0, 0.45, 0.105, -0.05), (70.0, 0.41, 0.1, -0.03)], false)),
+        // Madara: plush, voluminous dark mane framing the cheeks.
+        Hair::Mane => (oval(0.0, -0.05, 0.46, 0.36), rays(0.0, -0.06, &[(0.0, 0.5, 0.125, 0.03), (32.0, 0.53, 0.125, 0.06), (66.0, 0.55, 0.125, 0.07), (98.0, 0.55, 0.12, 0.07), (130.0, 0.51, 0.115, 0.05)], true)),
+        // Obito / Gaara: neat, rounded chibi crop.
+        Hair::Short => (oval(0.0, -0.15, 0.39, 0.23), rays(0.0, -0.13, &[(0.0, 0.43, 0.105, 0.02), (32.0, 0.44, 0.105, 0.04), (66.0, 0.43, 0.1, 0.04), (96.0, 0.41, 0.095, 0.04)], true)),
+        // Itachi / Hinata / Sakura: sleek rounded bob framing the sides.
+        Hair::Straight | Hair::Parted => (oval(0.0, -0.09, 0.43, 0.28), rays(0.0, -0.12, &[(48.0, 0.46, 0.115, 0.03), (86.0, 0.45, 0.115, 0.04)], true)),
+        // Pain: crisp medium-length chibi spikes.
+        Hair::Sharp => (top, rays(0.0, -0.13, &[(0.0, 0.49, 0.09, 0.0), (24.0, 0.49, 0.09, 0.02), (50.0, 0.48, 0.09, 0.03), (78.0, 0.46, 0.085, 0.03), (104.0, 0.42, 0.08, 0.02)], true)),
         Hair::None => return Vec::new(),
     };
     std::iter::once(mass).chain(locks.iter().map(|l| l.path())).collect()
 }
 
-/// The cap and the big, soft bangs hanging from it.
+/// Soft chibi bangs framing the forehead and cheeks without crowding the eyes.
 fn front_hair(h: Hair) -> (&'static [S], Vec<Lock>) {
     let mut v = Vec::new();
     let cap = match h {
         Hair::Spiky => {
-            v.push(Lock(0.0, -0.27, 180.0, 0.2, 0.1, 0.03));
-            v.extend(both(&[Lock(0.18, -0.26, 166.0, 0.19, 0.095, 0.04), Lock(0.34, -0.2, 150.0, 0.16, 0.085, 0.04)]));
+            v.push(Lock(0.0, -0.28, 180.0, 0.16, 0.095, 0.025));
+            v.extend(both(&[Lock(0.17, -0.27, 166.0, 0.155, 0.09, 0.035), Lock(0.32, -0.22, 154.0, 0.14, 0.08, 0.03)]));
             CAP
         }
         Hair::Flash => {
-            v.extend([Lock(-0.07, -0.27, 186.0, 0.19, 0.09, -0.03), Lock(0.11, -0.27, 174.0, 0.18, 0.09, 0.03)]);
-            v.extend(both(&[Lock(0.36, -0.21, 176.0, 0.32, 0.075, 0.04)]));
+            v.extend([Lock(-0.07, -0.28, 186.0, 0.16, 0.088, -0.025), Lock(0.1, -0.28, 174.0, 0.155, 0.088, 0.025)]);
+            v.extend(both(&[Lock(0.35, -0.22, 175.0, 0.27, 0.072, 0.035)]));
             CAP
         }
         Hair::Swept => {
-            v.extend([Lock(0.03, -0.27, 190.0, 0.2, 0.1, -0.04), Lock(-0.18, -0.25, 198.0, 0.17, 0.09, -0.03), Lock(0.22, -0.25, 168.0, 0.16, 0.085, 0.03)]);
-            v.extend(both(&[Lock(0.38, -0.19, 176.0, 0.28, 0.07, 0.035)]));
+            v.extend([Lock(0.02, -0.28, 190.0, 0.165, 0.095, -0.035), Lock(-0.17, -0.26, 196.0, 0.145, 0.085, -0.025), Lock(0.2, -0.26, 168.0, 0.14, 0.082, 0.025)]);
+            v.extend(both(&[Lock(0.36, -0.2, 176.0, 0.24, 0.068, 0.03)]));
             CAP
         }
         Hair::Leaning => {
             v.extend([
-                Lock(-0.3, -0.21, 206.0, 0.15, 0.085, -0.03),
-                Lock(-0.12, -0.26, 200.0, 0.19, 0.095, -0.04),
-                Lock(0.07, -0.27, 194.0, 0.19, 0.095, -0.04),
-                Lock(0.26, -0.24, 186.0, 0.16, 0.09, -0.03),
-                Lock(0.41, -0.15, 176.0, 0.11, 0.07, -0.01),
+                Lock(-0.28, -0.22, 204.0, 0.135, 0.082, -0.025),
+                Lock(-0.11, -0.27, 198.0, 0.165, 0.09, -0.035),
+                Lock(0.07, -0.28, 192.0, 0.165, 0.09, -0.035),
+                Lock(0.24, -0.25, 184.0, 0.14, 0.085, -0.025),
             ]);
             CAP
         }
         Hair::Mane => {
-            v.push(Lock(0.0, -0.27, 184.0, 0.2, 0.1, -0.03));
-            v.extend(both(&[Lock(0.18, -0.26, 170.0, 0.19, 0.095, 0.04), Lock(0.38, -0.19, 174.0, 0.34, 0.08, 0.04)]));
+            v.push(Lock(0.0, -0.28, 184.0, 0.165, 0.095, -0.025));
+            v.extend(both(&[Lock(0.17, -0.27, 170.0, 0.16, 0.09, 0.035), Lock(0.36, -0.2, 174.0, 0.29, 0.076, 0.035)]));
             CAP
         }
         Hair::Short => {
-            v.push(Lock(0.0, -0.27, 180.0, 0.13, 0.09, 0.0));
-            v.extend(both(&[Lock(0.16, -0.26, 168.0, 0.13, 0.085, 0.02), Lock(0.31, -0.22, 154.0, 0.12, 0.08, 0.02)]));
+            v.push(Lock(0.0, -0.28, 180.0, 0.125, 0.088, 0.0));
+            v.extend(both(&[Lock(0.16, -0.27, 168.0, 0.12, 0.082, 0.02), Lock(0.3, -0.23, 156.0, 0.11, 0.075, 0.02)]));
             CAP
         }
-        // Curtain bangs: from a part in the middle, full locks sweep down
-        // and out over the forehead, then long locks frame the face.
         Hair::Straight => {
-            v.extend(both(&[Lock(0.05, -0.27, 156.0, 0.2, 0.1, 0.05), Lock(0.22, -0.25, 162.0, 0.17, 0.09, 0.04), Lock(0.4, -0.18, 178.0, 0.42, 0.075, 0.03)]));
+            v.extend(both(&[Lock(0.05, -0.28, 156.0, 0.17, 0.095, 0.045), Lock(0.21, -0.26, 162.0, 0.15, 0.085, 0.035), Lock(0.38, -0.19, 178.0, 0.34, 0.072, 0.025)]));
             CAP_PART
         }
         Hair::Parted => {
-            v.extend(both(&[Lock(0.05, -0.27, 160.0, 0.19, 0.1, 0.05), Lock(0.22, -0.25, 166.0, 0.16, 0.09, 0.04), Lock(0.39, -0.19, 177.0, 0.33, 0.07, 0.03)]));
+            v.extend(both(&[Lock(0.05, -0.28, 160.0, 0.16, 0.095, 0.045), Lock(0.21, -0.26, 166.0, 0.14, 0.085, 0.035), Lock(0.37, -0.2, 177.0, 0.27, 0.068, 0.025)]));
             CAP_PART
         }
         Hair::Sharp => {
-            v.push(Lock(0.0, -0.27, 180.0, 0.18, 0.065, 0.0));
-            v.extend(both(&[Lock(0.13, -0.27, 170.0, 0.18, 0.065, 0.02), Lock(0.26, -0.24, 158.0, 0.16, 0.065, 0.025), Lock(0.38, -0.18, 146.0, 0.13, 0.06, 0.02)]));
+            v.push(Lock(0.0, -0.28, 180.0, 0.155, 0.068, 0.0));
+            v.extend(both(&[Lock(0.13, -0.28, 170.0, 0.15, 0.068, 0.02), Lock(0.25, -0.25, 158.0, 0.14, 0.065, 0.025), Lock(0.36, -0.19, 148.0, 0.12, 0.06, 0.02)]));
             CAP
         }
         Hair::None => CAP,
@@ -306,13 +310,12 @@ fn keys(h: Hair) -> (&'static str, &'static str, &'static str) {
     }
 }
 
-/// Outline of the hair: darker than the hair, but on very dark hair a
-/// sheen-tinted edge so it still reads on a black background.
+/// Outline of the hair: warm and harmonious with the mascot's soft outline.
 fn hair_line(sk: &Skin) -> Rgb {
     if super::luminance(sk.hairc) < 0.2 {
-        mix(sk.sheen, INK, 0.35)
+        mix(sk.sheen, INK, 0.42)
     } else {
-        mix(sk.hairc, INK, 0.58)
+        mix(sk.hairc, INK, 0.52)
     }
 }
 
@@ -339,14 +342,14 @@ pub(super) fn hair_back(p: &Pen, sk: &Skin, head: Matrix3x2) -> Result<()> {
     let g = p.union(keys(h).0, || back_hair(h))?;
     let c = sk.hairc;
     p.at(head);
-    let b = p.linear(0.0, -0.75, 0.0, 0.5, &[(0.0, mix(c, sk.sheen, 0.3), 1.0), (0.5, mix(c, INK, 0.08), 1.0), (1.0, mix(c, INK, 0.3), 1.0)])?;
+    let b = p.linear(0.0, -0.65, 0.0, 0.4, &[(0.0, mix(c, sk.sheen, 0.28), 1.0), (0.5, mix(c, INK, 0.06), 1.0), (1.0, mix(c, INK, 0.24), 1.0)])?;
     p.fill_with(head, &g, &b);
-    p.stroke(head, &g, hair_line(sk), 1.0, p.lw * 0.75);
+    p.stroke(head, &g, hair_line(sk), 1.0, p.lw * 0.8);
     Ok(())
 }
 
 /// The cap and bangs (with their soft shadow on the forehead and a glossy
-/// ring of shine), then the face marks. Drawn after the head's outline.
+/// anime halo highlight), then the face marks. Drawn after the head's outline.
 pub(super) fn over_head(p: &Pen, sk: &Skin, head: Matrix3x2) -> Result<()> {
     if sk.hair != Hair::None {
         let h = sk.hair;
@@ -357,84 +360,83 @@ pub(super) fn over_head(p: &Pen, sk: &Skin, head: Matrix3x2) -> Result<()> {
         };
         let g = p.union(key, || parts(0.0))?;
         let hg = p.head()?;
-        let sh = p.clip(skey, &hg, |p| super::union_paths(p.f, &parts(0.025)))?;
-        p.fill(head, &sh, mix(sk.fur, INK, 0.5), 0.16);
+        let sh = p.clip(skey, &hg, |p| super::union_paths(p.f, &parts(0.022)))?;
+        p.fill(head, &sh, mix(sk.fur, INK, 0.45), 0.14);
         let c = sk.hairc;
         p.at(head);
-        let b = p.linear(0.0, -0.38, 0.0, 0.05, &[(0.0, mix(c, sk.sheen, 0.45), 1.0), (0.4, c, 1.0), (1.0, mix(c, INK, 0.16), 1.0)])?;
+        let b = p.linear(0.0, -0.39, 0.0, 0.02, &[(0.0, mix(c, sk.sheen, 0.42), 1.0), (0.45, c, 1.0), (1.0, mix(c, INK, 0.14), 1.0)])?;
         p.fill_with(head, &g, &b);
         if !p.small {
-            // The glossy "ring" of shine across the crown.
-            let lens = p.path("sh_shine", &[M(-1.0, 0.0), Q(0.0, -0.9, 1.0, 0.0), Q(0.0, 0.5, -1.0, 0.0), Z])?;
-            for x in [-0.27f32, -0.1, 0.1, 0.27] {
-                let y = -0.298 + 0.36 * x * x;
-                let m = Matrix3x2::scale(0.06, 0.026) * rot(x * 75.0, 0.0, 0.0) * tr(x, y) * head;
-                p.fill(m, &lens, sk.sheen, 0.8);
-            }
+            // Soft curved anime halo highlight across the crown.
+            let halo = p.path("sh_halo", &[M(-0.24, -0.275), Q(0.0, -0.345, 0.24, -0.275), O])?;
+            p.stroke(head, &halo, sk.sheen, 0.55, 0.026);
+            p.fill_el(head, -0.14, -0.305, 0.045, 0.016, WHITE, 0.45);
+            p.fill_el(head, 0.14, -0.305, 0.045, 0.016, WHITE, 0.45);
         }
         if std::ptr::eq(front_hair(h).0, CAP_PART) && !p.small {
-            let part = p.path("sh_part", &[M(0.0, -0.37), Q(0.006, -0.33, 0.0, -0.28), O])?;
-            p.stroke(head, &part, hair_line(sk), 0.9, p.lw * 0.6);
+            let part = p.path("sh_part", &[M(0.0, -0.38), Q(0.005, -0.34, 0.0, -0.295), O])?;
+            p.stroke(head, &part, hair_line(sk), 0.85, p.lw * 0.55);
         }
-        p.stroke(head, &g, hair_line(sk), 1.0, p.lw * 0.75);
+        p.stroke(head, &g, hair_line(sk), 1.0, p.lw * 0.8);
     }
 
-    // Face marks.
+    // Face marks aligned to the chibi species proportions (eye_y ~ 0.04).
     let mc = sk.facec;
     match sk.face {
         Face::Whiskers => {
-            let w = p.path("sh_whisker", &[M(0.0, 0.0), Q(0.07, -0.012, 0.13, 0.0), O])?;
+            let w = p.path("sh_whisker", &[M(0.0, 0.0), Q(0.06, -0.01, 0.115, 0.005), O])?;
             for s in [Matrix3x2::identity(), flip()] {
-                for (y, deg) in [(0.115f32, -12.0f32), (0.165, 0.0), (0.215, 12.0)] {
-                    p.stroke(rot(deg, 0.0, 0.0) * tr(0.32, y) * s * head, &w, mc, 0.85, 0.02);
+                for (y, deg) in [(0.068f32, -10.0f32), (0.112, 0.0), (0.156, 10.0)] {
+                    p.stroke(rot(deg, 0.0, 0.0) * tr(0.255, y) * s * head, &w, mc, 0.82, 0.018);
                 }
             }
         }
         Face::Mask => {
-            let g = p.on_head("sh_mask", &[M(-0.6, 0.125), Q(0.0, 0.085, 0.6, 0.125), L(0.6, 0.6), L(-0.6, 0.6), Z])?;
+            // Snug chibi shinobi cloth mask curving softly over the nose bridge.
+            let g = p.on_head("sh_mask", &[M(-0.55, 0.11), Q(0.0, 0.065, 0.55, 0.11), L(0.55, 0.52), L(-0.55, 0.52), Z])?;
             p.at(head);
-            let b = p.linear(0.0, 0.1, 0.0, 0.4, &[(0.0, mix(mc, WHITE, 0.14), 1.0), (1.0, mix(mc, INK, 0.2), 1.0)])?;
+            let b = p.linear(0.0, 0.07, 0.0, 0.36, &[(0.0, mix(mc, WHITE, 0.18), 1.0), (0.55, mc, 1.0), (1.0, mix(mc, INK, 0.24), 1.0)])?;
             p.fill_with(head, &g, &b);
-            p.stroke(head, &g, mix(mc, INK, 0.5), 1.0, p.lw * 0.8);
-            // The nose under the cloth, and a fold or two.
-            p.fill_el(head, 0.0, 0.2, 0.05, 0.03, WHITE, 0.14);
-            let fold = p.path("sh_mask_fold", &[M(-0.2, 0.3), Q(0.0, 0.34, 0.2, 0.3), O])?;
-            p.stroke(head, &fold, mix(mc, INK, 0.45), 0.7, 0.014);
+            p.stroke(head, &g, mix(mc, INK, 0.45), 1.0, p.lw * 0.78);
+            // Soft nose highlight & gentle cloth drape.
+            p.fill_el(head, 0.0, 0.145, 0.055, 0.024, WHITE, 0.16);
+            let fold = p.path("sh_mask_fold", &[M(-0.18, 0.235), Q(0.0, 0.27, 0.18, 0.235), O])?;
+            p.stroke(head, &fold, mix(mc, INK, 0.4), 0.6, 0.013);
         }
         Face::RedMarks => {
-            // A thin tapering stripe under each eye.
-            let mark = p.path("sh_redmark", &[M(-0.013, 0.0), Q(0.0, -0.008, 0.013, 0.0), L(0.0, 0.06), Z])?;
+            // Dainty tapering crimson mark under each eye.
+            let mark = p.path("sh_redmark", &[M(-0.014, 0.0), Q(0.0, -0.008, 0.014, 0.0), L(0.0, 0.052), Z])?;
             for side in [-1.0f32, 1.0] {
-                p.fill(tr(0.185 * side, 0.19) * head, &mark, mc, 0.85);
+                p.fill(tr(0.175 * side, 0.135) * head, &mark, mc, 0.88);
             }
         }
         Face::TearLines => {
-            let l = p.path("sh_tear", &[M(0.105, 0.14), Q(0.115, 0.19, 0.155, 0.215), O])?;
+            let l = p.path("sh_tear", &[M(0.105, 0.095), Q(0.118, 0.14, 0.155, 0.165), O])?;
             for s in [Matrix3x2::identity(), flip()] {
-                p.stroke(s * head, &l, mc, 0.8, 0.015);
+                p.stroke(s * head, &l, mc, 0.78, 0.014);
             }
         }
         Face::Beast => {
-            // Dark marks sweeping from the eyes up towards the ears.
-            let g = p.path("sh_beast", &[M(0.265, 0.07), Q(0.34, 0.0, 0.42, -0.15), Q(0.37, -0.02, 0.26, 0.02), Z])?;
+            // Bold kurama-inspired cheek markings & determined brows.
+            let g = p.path("sh_beast", &[M(0.25, 0.03), Q(0.32, -0.04, 0.39, -0.15), Q(0.35, -0.04, 0.245, -0.01), Z])?;
             for s in [Matrix3x2::identity(), flip()] {
-                p.fill(s * head, &g, mc, 0.95);
+                p.fill(s * head, &g, mc, 0.92);
             }
-            let brow = p.path("sh_beast_brow", &[M(0.1, -0.06), Q(0.17, -0.1, 0.27, -0.06), O])?;
+            let brow = p.path("sh_beast_brow", &[M(0.1, -0.075), Q(0.17, -0.11, 0.255, -0.07), O])?;
             for s in [Matrix3x2::identity(), flip()] {
-                p.stroke(s * head, &brow, mc, 0.9, 0.024);
+                p.stroke(s * head, &brow, mc, 0.88, 0.022);
             }
             for side in [-1.0f32, 1.0] {
-                for (y0, y1) in [(0.13, 0.11), (0.18, 0.18), (0.23, 0.25)] {
-                    p.seg(head, 0.34 * side, y0, 0.46 * side, y1, mc, 0.8, 0.024);
+                for (y0, y1) in [(0.08, 0.065), (0.125, 0.125), (0.17, 0.185)] {
+                    p.seg(head, 0.28 * side, y0, 0.39 * side, y1, mc, 0.82, 0.022);
                 }
             }
         }
         Face::Studs => {
-            // Studs down the bridge of the nose and under the lip.
-            for (x, y) in [(0.0f32, 0.035f32), (0.0, 0.08), (0.0, 0.125), (-0.035, 0.31), (0.035, 0.31)] {
-                p.fill_el(head, x, y, 0.017, 0.017, mix(mc, INK, 0.5), 1.0);
-                p.fill_el(head, x, y, 0.012, 0.012, mc, 1.0);
+            // Tiny metallic studs along the nose bridge and chin.
+            for (x, y) in [(0.0f32, 0.01f32), (0.0, 0.052), (0.0, 0.094), (-0.035, 0.22), (0.035, 0.22)] {
+                p.fill_el(head, x, y, 0.016, 0.016, mix(mc, INK, 0.5), 1.0);
+                p.fill_el(head, x, y, 0.011, 0.011, mc, 1.0);
                 p.fill_el(head, x - 0.004, y - 0.004, 0.005, 0.005, WHITE, 0.95);
             }
         }
@@ -446,9 +448,9 @@ pub(super) fn over_head(p: &Pen, sk: &Skin, head: Matrix3x2) -> Result<()> {
 /// Marks drawn over the eyes (a scar across the patterned eye).
 pub(super) fn over_eyes(p: &Pen, sk: &Skin, head: Matrix3x2) -> Result<()> {
     if sk.eye == Eye::OneTomoe {
-        // Above and below the eye, never across it.
-        let scar = p.path("sh_scar", &[M(0.172, -0.14), L(0.178, -0.065), M(0.192, 0.2), L(0.199, 0.26), O])?;
-        p.stroke(head, &scar, [0.55, 0.28, 0.3], 0.9, 0.016);
+        // Above and below the right eye, cleanly aligned to eye_y ~ 0.04.
+        let scar = p.path("sh_scar", &[M(0.168, -0.11), L(0.174, -0.05), M(0.184, 0.135), L(0.19, 0.19), O])?;
+        p.stroke(head, &scar, [0.58, 0.28, 0.32], 0.9, 0.016);
     }
     Ok(())
 }
@@ -701,197 +703,199 @@ pub(super) fn accessory(p: &Pen, i: usize, layer: Layer, h: Matrix3x2, t: f32) -
                 p.seg(h, -0.15, -0.306, 0.11, -0.306, WHITE, 0.7, 0.008);
             }
         }
-        // Red cloud cloak: a rounded high collar wrapping under the cheeks,
-        // lined in red, with two little red clouds.
+        // Red cloud cloak: snug chibi Akatsuki high-collar cloak wrapping cleanly around the torso.
         (1, Mid) => {
-            let red = [0.86, 0.13, 0.17];
-            let edge_top = [M(-0.55, 0.12), Q(-0.4, 0.36, 0.0, 0.41), Q(0.4, 0.36, 0.55, 0.12)];
-            let mut v = edge_top.to_vec();
-            v.extend_from_slice(&[Q(0.64, 0.46, 0.38, 0.59), Q(0.0, 0.67, -0.38, 0.59), Q(-0.64, 0.46, -0.55, 0.12), Z]);
+            let red = [0.88, 0.14, 0.19];
+            let collar_top = [M(-0.46, 0.16), Q(-0.34, 0.29, 0.0, 0.31), Q(0.34, 0.29, 0.46, 0.16)];
+            let mut v = collar_top.to_vec();
+            v.extend_from_slice(&[Q(0.51, 0.34, 0.36, 0.44), Q(0.0, 0.48, -0.36, 0.44), Q(-0.51, 0.34, -0.46, 0.16), Z]);
             let collar = p.path("sh_cloak", &v)?;
             p.at(h);
-            let b = p.linear(0.0, 0.12, 0.0, 0.66, &[(0.0, [0.32, 0.3, 0.36], 1.0), (1.0, [0.1, 0.09, 0.12], 1.0)])?;
+            let b = p.linear(0.0, 0.16, 0.0, 0.48, &[(0.0, [0.24, 0.22, 0.28], 1.0), (1.0, [0.09, 0.08, 0.12], 1.0)])?;
             p.fill_with(h, &collar, &b);
-            let mut l = edge_top.to_vec();
+            let mut l = collar_top.to_vec();
             l.push(O);
             let lining = p.path("sh_cloak_lining", &l)?;
-            p.stroke(h, &lining, red, 1.0, 0.04);
-            p.stroke(h, &collar, [0.42, 0.4, 0.46], 1.0, lw);
+            p.stroke(h, &lining, red, 1.0, 0.032);
+            p.stroke(h, &collar, [0.34, 0.32, 0.38], 1.0, lw * 0.9);
+            // Cute center clasp & two puffy white-outlined red clouds.
+            p.seg(h, 0.0, 0.31, 0.0, 0.46, [0.35, 0.33, 0.4], 0.75, 0.012);
             let cloud = p.path("sh_cloud", CLOUD)?;
-            for (x, y, k, deg) in [(-0.34, 0.56, 0.15, -6.0f32), (0.35, 0.55, 0.14, 8.0)] {
+            for (x, y, k, deg) in [(-0.31, 0.33, 0.125, -10.0f32), (0.31, 0.33, 0.125, 10.0)] {
                 let m = put(x, y, k, deg) * h;
                 p.fill(m, &cloud, red, 1.0);
-                p.stroke(m, &cloud, WHITE, 1.0, 0.02 / k);
+                p.stroke(m, &cloud, WHITE, 1.0, 0.018 / k);
             }
         }
-        // Leader's hat: a wide conical hat with a red crown and a flame emblem;
-        // white veils hang down behind.
+        // Leader's hat: cute proportional warm-cream & crimson chibi Hokage hat with fluttering veils.
         (2, Back) => {
-            let veil = p.path("sh_veil", &[M(0.3, -0.3), Q(0.62, -0.2, 0.66, 0.34), L(0.46, 0.3), Q(0.44, -0.05, 0.3, -0.3), Z])?;
-            let sway = (t * 1.5).sin() * 3.0;
+            let veil = p.path("sh_veil", &[M(0.28, -0.28), Q(0.54, -0.18, 0.56, 0.24), L(0.4, 0.22), Q(0.38, -0.06, 0.28, -0.28), Z])?;
+            let sway = (t * 1.5).sin() * 2.5;
             for s in [Matrix3x2::identity(), flip()] {
-                let m = rot(sway, 0.3, -0.3) * s * h;
-                p.fill(m, &veil, [0.97, 0.97, 0.95], 1.0);
-                p.stroke(m, &veil, [0.62, 0.62, 0.66], 1.0, lw);
+                let m = rot(sway, 0.28, -0.28) * s * h;
+                p.fill(m, &veil, [0.99, 0.97, 0.93], 1.0);
+                p.stroke(m, &veil, [0.68, 0.62, 0.58], 1.0, lw * 0.85);
             }
         }
         (2, Front) => {
-            let f = rot(-3.0, 0.0, -0.3) * h;
-            let white = [0.98, 0.97, 0.94];
-            let red = [0.86, 0.14, 0.18];
-            p.obj_el(f, 0.0, -0.3, 0.64, 0.13, white);
-            p.ring(f, 0.0, -0.3, 0.6, 0.11, red, 0.9, 0.018);
-            let cone = p.path("sh_kage_cone", &[M(-0.5, -0.31), Q(-0.24, -0.5, 0.0, -0.78), Q(0.24, -0.5, 0.5, -0.31), Q(0.0, -0.24, -0.5, -0.31), Z])?;
+            let f = rot(-2.5, 0.0, -0.3) * h;
+            let cream = [0.99, 0.96, 0.91];
+            let red = [0.88, 0.16, 0.2];
+            // Soft curved brim with crimson trim.
+            p.obj_el(f, 0.0, -0.31, 0.54, 0.11, cream);
+            p.ring(f, 0.0, -0.31, 0.51, 0.095, red, 0.92, 0.02);
+            // Softly domed chibi crown (not a stiff gray triangle).
+            let dome = p.path("sh_kage_cone", &[M(-0.42, -0.32), Q(-0.28, -0.56, 0.0, -0.66), Q(0.28, -0.56, 0.42, -0.32), Q(0.0, -0.25, -0.42, -0.32), Z])?;
             p.at(f);
-            let shade = p.linear(-0.5, 0.0, 0.5, 0.0, &[(0.0, [0.86, 0.85, 0.84], 1.0), (0.4, white, 1.0), (1.0, [0.82, 0.81, 0.8], 1.0)])?;
-            p.fill_with(f, &cone, &shade);
-            let crown = p.clip("sh_kage_crown", &cone, |p| build_path(p.f, &[M(-0.6, -0.56), L(0.6, -0.56), L(0.6, -0.9), L(-0.6, -0.9), Z]))?;
+            let shade = p.linear(-0.42, 0.0, 0.42, 0.0, &[(0.0, [0.92, 0.87, 0.8], 1.0), (0.42, cream, 1.0), (1.0, [0.88, 0.82, 0.75], 1.0)])?;
+            p.fill_with(f, &dome, &shade);
+            let crown = p.clip("sh_kage_crown", &dome, |p| build_path(p.f, &[M(-0.5, -0.49), Q(0.0, -0.46, 0.5, -0.49), L(0.5, -0.78), L(-0.5, -0.78), Z]))?;
             p.fill(f, &crown, red, 1.0);
-            p.stroke(f, &cone, [0.55, 0.55, 0.58], 1.0, lw);
-            // Straw weave lines.
-            for x in [-0.3f32, -0.15, 0.15, 0.3] {
-                p.seg(f, x * 0.9, -0.33, x * 0.4, -0.55, [0.7, 0.68, 0.66], 0.5, 0.01);
-            }
-            // The emblem: a red diamond plate with a white flame.
-            let plate = p.path("sh_kage_plate", &[M(0.0, -0.52), L(0.1, -0.42), L(0.0, -0.32), L(-0.1, -0.42), Z])?;
+            p.stroke(f, &dome, [0.58, 0.46, 0.42], 1.0, lw * 0.9);
+            // Cute crimson diamond emblem with glowing little white flame.
+            let plate = p.path("sh_kage_plate", &[M(0.0, -0.48), L(0.09, -0.39), L(0.0, -0.3), L(-0.09, -0.39), Z])?;
             p.obj(f, 1.0, &plate, red);
+            p.stroke(f, &plate, cream, 0.95, 0.012);
             let flame = p.path("sh_flame", FLAME)?;
-            let k = 0.075 + 0.005 * (t * 6.0).sin();
-            p.fill(Matrix3x2::scale(k * 0.8, k) * tr(0.0, -0.41) * f, &flame, white, 1.0);
+            let k = 0.068 + 0.004 * (t * 5.0).sin();
+            p.fill(Matrix3x2::scale(k * 0.82, k) * tr(0.0, -0.385) * f, &flame, cream, 1.0);
         }
-        // Spiral sphere: a swirling ball of energy held up beside the face.
+        // Spiral sphere: a glowing cyan Rasengan swirling beside the cheek.
         (3, Front) => {
-            let (x, y, r) = (0.5, 0.18, 0.17);
-            let blue = [0.35, 0.72, 1.0];
-            p.glow(h, x, y, r * 2.0, r * 2.0, blue, 0.55)?;
+            let (x, y, r) = (0.49, 0.14, 0.155);
+            let blue = [0.32, 0.74, 1.0];
+            p.glow(h, x, y, r * 2.1, r * 2.1, blue, 0.58)?;
             p.at(h);
-            let ball = p.radial(x - 0.03, y - 0.03, r, r, &[(0.0, WHITE, 1.0), (0.35, [0.75, 0.92, 1.0], 1.0), (1.0, [0.2, 0.55, 1.0], 0.85)], 1.0)?;
+            let ball = p.radial(x - 0.025, y - 0.025, r, r, &[(0.0, WHITE, 1.0), (0.38, [0.78, 0.94, 1.0], 1.0), (1.0, [0.22, 0.58, 1.0], 0.88)], 1.0)?;
             unsafe { p.rt.FillEllipse(&super::ell(x, y, r, r), &ball) };
-            let arc = p.path("sh_swirl", &[M(0.0, -0.95), Q(0.9, -0.85, 0.85, 0.1), O])?;
+            let arc = p.path("sh_swirl", &[M(0.0, -0.92), Q(0.88, -0.82, 0.82, 0.12), O])?;
             for j in 0..4 {
-                let deg = t * 520.0 + j as f32 * 90.0;
-                let k = r * (0.55 + 0.4 * ((j % 2) as f32));
-                p.stroke(Matrix3x2::scale(k, k) * rot(deg, 0.0, 0.0) * tr(x, y), &arc, WHITE, 0.75, 0.09);
+                let deg = t * 440.0 + j as f32 * 90.0;
+                let k = r * (0.55 + 0.36 * ((j % 2) as f32));
+                p.stroke(Matrix3x2::scale(k, k) * rot(deg, 0.0, 0.0) * tr(x, y), &arc, WHITE, 0.8, 0.09);
             }
-            p.ring(h, x, y, r, r, [0.75, 0.92, 1.0], 0.9, 0.012);
-            p.ring(h, x, y, r * 1.18 + 0.01 * (t * 12.0).sin(), r * 1.18, blue, 0.45, 0.01);
+            p.ring(h, x, y, r, r, [0.78, 0.94, 1.0], 0.92, 0.012);
+            p.ring(h, x, y, r * 1.18 + 0.008 * (t * 10.0).sin(), r * 1.18, blue, 0.45, 0.01);
             if !p.small {
                 for j in 0..3 {
-                    let a = t * 6.0 + j as f32 * 2.1;
-                    p.spark(h, x + a.cos() * r * 1.3, y + a.sin() * r * 1.3, 0.03, WHITE, 0.8)?;
+                    let a = t * 5.0 + j as f32 * 2.1;
+                    p.spark(h, x + a.cos() * r * 1.32, y + a.sin() * r * 1.32, 0.03, WHITE, 0.85)?;
                 }
             }
         }
-        // A three-pronged kunai floating beside the head, a seal tag on its grip.
+        // Warp kunai: chibi three-pronged Flying Raijin kunai with fluttering seal tag.
         (4, Front) => {
-            let k = 0.56;
-            let bob = (t * 2.0).sin() * 0.03;
-            let m = put(-0.68, -0.08 + bob, k, -18.0 + (t * 1.3).sin() * 6.0) * h;
+            let k = 0.52;
+            let bob = (t * 2.0).sin() * 0.025;
+            let m = put(-0.62, -0.06 + bob, k, -16.0 + (t * 1.3).sin() * 5.0) * h;
             let kunai = p.path("sh_kunai", KUNAI)?;
             p.at(m);
             let steel = p.linear(-0.2, 0.0, 0.2, 0.0, &[(0.0, STEEL_LO, 1.0), (0.5, STEEL_HI, 1.0), (1.0, STEEL, 1.0)])?;
             p.fill_with(m, &kunai, &steel);
-            p.stroke(m, &kunai, [0.25, 0.27, 0.33], 1.0, lw / k);
-            p.seg(m, 0.0, -0.58, 0.0, -0.16, WHITE, 0.6, 0.016);
-            p.fill(m, &p.path("sh_kunai_grip", &rrect(-0.05, -0.08, 0.05, 0.28, 0.02))?, [0.2, 0.18, 0.24], 1.0);
+            p.stroke(m, &kunai, [0.28, 0.3, 0.38], 1.0, lw / k);
+            p.seg(m, 0.0, -0.56, 0.0, -0.16, WHITE, 0.65, 0.018);
+            // Cream-white wrapped handle with subtle wraps.
+            p.fill(m, &p.path("sh_kunai_grip", &rrect(-0.055, -0.08, 0.055, 0.28, 0.024))?, [0.95, 0.92, 0.86], 1.0);
             for j in 0..5 {
                 let y = -0.05 + j as f32 * 0.07;
-                p.seg(m, -0.05, y, 0.05, y + 0.04, [0.42, 0.4, 0.46], 1.0, 0.016);
+                p.seg(m, -0.055, y, 0.055, y + 0.035, [0.72, 0.66, 0.58], 0.9, 0.014);
             }
-            p.ring(m, 0.0, 0.37, 0.08, 0.08, [0.3, 0.32, 0.38], 1.0, 0.035);
+            p.ring(m, 0.0, 0.37, 0.08, 0.08, [0.35, 0.37, 0.44], 1.0, 0.035);
             let tag = p.path("sh_tag", &[M(0.05, 0.02), L(0.32, 0.06), L(0.3, 0.2), L(0.05, 0.16), Z])?;
-            let tm = rot((t * 5.0).sin() * 8.0, 0.05, 0.09) * m;
-            p.obj(tm, k, &tag, [0.96, 0.92, 0.8]);
-            p.seg(tm, 0.11, 0.1, 0.27, 0.12, [0.7, 0.16, 0.18], 1.0, 0.02);
+            let tm = rot((t * 4.5).sin() * 7.0, 0.05, 0.09) * m;
+            p.obj(tm, k, &tag, [0.98, 0.94, 0.82]);
+            p.seg(tm, 0.1, 0.1, 0.27, 0.12, [0.84, 0.18, 0.2], 1.0, 0.022);
             let u = (t * 0.7).fract();
             if u < 0.18 {
                 let a = (u / 0.18 * PI).sin();
-                p.glow(m, 0.0, -0.62, 0.3 * a, 0.3 * a, [1.0, 0.9, 0.3], 0.7)?;
+                p.glow(m, 0.0, -0.62, 0.3 * a, 0.3 * a, [1.0, 0.9, 0.34], 0.72)?;
                 p.spark(m, 0.0, -0.62, 0.16 * a, WHITE, 1.0)?;
             }
         }
-        // Cat mask worn on the side of the head: a white cat face with red marks.
+        // Cat mask: cute rounded ceramic ANBU fox/cat mask tucked playfully on the side of the head.
         (5, Front) => {
-            let k = 0.44;
-            let f = put(0.31, -0.25, k, 22.0) * h;
-            let white = [0.98, 0.98, 0.97];
-            let red = [0.84, 0.12, 0.16];
-            let face = p.shape("sh_catmask", |p| build_path(p.f, &super::sym(&[M(0.0, -0.26), B(0.2, -0.27, 0.34, -0.16, 0.36, 0.04), B(0.36, 0.24, 0.16, 0.42, 0.0, 0.44)])))?;
-            let ear_r = [M(0.12, -0.2), L(0.32, -0.46), L(0.35, -0.05), Z];
+            let k = 0.4;
+            let f = put(0.3, -0.25, k, 20.0) * h;
+            let cream = [0.99, 0.98, 0.96];
+            let red = [0.88, 0.16, 0.22];
+            let face = p.shape("sh_catmask", |p| build_path(p.f, &super::sym(&[M(0.0, -0.28), B(0.22, -0.29, 0.37, -0.15, 0.38, 0.06), B(0.37, 0.26, 0.18, 0.42, 0.0, 0.42)])))?;
+            let ear_r = [M(0.11, -0.2), Q(0.24, -0.45, 0.34, -0.44), Q(0.38, -0.24, 0.35, -0.05), Z];
             let ears = p.shape("sh_catmask_ears", |p| build_path(p.f, &[ear_r.to_vec(), mirror(&ear_r)].concat()))?;
-            p.obj(f, k, &ears, white);
-            p.obj(f, k, &face, white);
+            p.obj(f, k, &ears, cream);
+            p.obj(f, k, &face, cream);
             for side in [-1.0f32, 1.0] {
-                let eye = rot(-14.0 * side, 0.14 * side, 0.02) * f;
-                p.fill_el(eye, 0.14 * side, 0.02, 0.07, 0.035, INK, 1.0);
-                p.seg(f, 0.08 * side, -0.14, 0.22 * side, -0.08, red, 1.0, 0.04);
-                p.seg(f, 0.2 * side, 0.14, 0.3 * side, 0.2, red, 1.0, 0.035);
-                p.fill_el(f, 0.25 * side, -0.33, 0.035, 0.06, red, 0.9);
+                let eye = rot(-12.0 * side, 0.14 * side, 0.03) * f;
+                p.fill_el(eye, 0.14 * side, 0.03, 0.072, 0.038, INK, 1.0);
+                p.seg(f, 0.08 * side, -0.13, 0.22 * side, -0.07, red, 1.0, 0.042);
+                p.seg(f, 0.19 * side, 0.15, 0.29 * side, 0.2, red, 1.0, 0.036);
+                p.fill_el(f, 0.25 * side, -0.31, 0.042, 0.065, [1.0, 0.56, 0.62], 0.92);
             }
-            let fore = p.path("sh_catmask_fore", &[M(0.0, -0.24), L(0.05, -0.12), L(0.0, -0.06), L(-0.05, -0.12), Z])?;
+            let fore = p.path("sh_catmask_fore", &[M(0.0, -0.23), L(0.055, -0.11), L(0.0, -0.05), L(-0.055, -0.11), Z])?;
             p.fill(f, &fore, red, 1.0);
-            p.fill_el(f, 0.0, 0.26, 0.04, 0.025, INK, 1.0);
+            p.fill_el(f, 0.0, 0.24, 0.042, 0.026, INK, 1.0);
         }
-        // A round clan fan carried on the back: red top, white bottom, wooden handle.
+        // Clan fan: iconic red-and-white Uchiha fan on the back with glossy rim.
         (6, Back) => {
-            let k = 0.78;
-            let f = put(-0.56, -0.14, k, -24.0) * h;
-            p.seg(f, 0.0, 0.05, 0.0, 0.6, [0.42, 0.28, 0.18], 1.0, 0.075);
-            p.seg(f, 0.0, 0.05, 0.0, 0.6, [0.72, 0.52, 0.34], 1.0, 0.04);
-            p.fill_el(f, 0.0, 0.62, 0.05, 0.03, [0.42, 0.28, 0.18], 1.0);
-            p.fill_el(f, 0.0, -0.18, 0.27, 0.3, WHITE, 1.0);
+            let k = 0.74;
+            let f = put(-0.52, -0.13, k, -22.0) * h;
+            p.seg(f, 0.0, 0.05, 0.0, 0.58, [0.42, 0.26, 0.16], 1.0, 0.078);
+            p.seg(f, 0.0, 0.05, 0.0, 0.58, [0.76, 0.54, 0.34], 1.0, 0.042);
+            p.fill_el(f, 0.0, 0.6, 0.052, 0.032, [0.42, 0.26, 0.16], 1.0);
+            p.fill_el(f, 0.0, -0.18, 0.27, 0.3, [0.99, 0.98, 0.96], 1.0);
             let disc = p.shape("sh_fan_disc", |p| p.ellipse_geo(0.0, -0.18, 0.27, 0.3))?;
             let top = p.clip("sh_fan_top", &disc, |p| build_path(p.f, &[M(-0.4, -0.6), L(0.4, -0.6), L(0.4, -0.15), Q(0.0, -0.23, -0.4, -0.15), Z]))?;
             p.at(f);
-            let red = p.linear(0.0, -0.48, 0.0, -0.15, &[(0.0, [0.95, 0.24, 0.26], 1.0), (1.0, [0.74, 0.06, 0.1], 1.0)])?;
+            let red = p.linear(0.0, -0.48, 0.0, -0.15, &[(0.0, [0.98, 0.26, 0.3], 1.0), (1.0, [0.78, 0.08, 0.12], 1.0)])?;
             p.fill_with(f, &top, &red);
-            p.ring(f, 0.0, -0.18, 0.27, 0.3, [0.4, 0.06, 0.1], 1.0, lw / k);
-            p.ring(f, 0.0, -0.18, 0.24, 0.27, WHITE, 0.35, 0.012);
-            p.seg(f, 0.0, 0.12, 0.0, 0.2, [0.4, 0.06, 0.1], 1.0, lw / k);
+            p.ring(f, 0.0, -0.18, 0.27, 0.3, [0.44, 0.08, 0.12], 1.0, lw / k);
+            p.ring(f, 0.0, -0.18, 0.24, 0.27, WHITE, 0.42, 0.014);
+            p.seg(f, 0.0, 0.12, 0.0, 0.2, [0.44, 0.08, 0.12], 1.0, lw / k);
         }
-        // Spirit armor: a glowing guardian's shoulder guards behind the fox,
-        // flickering softly.
+        // Spirit armor: ethereal glowing violet chakra ribcage aura behind the mascot.
         (7, Back) => {
-            let c = [0.6, 0.5, 1.0];
-            let hi = mix(c, WHITE, 0.6);
-            let flick = 0.86 + 0.14 * (t * 6.0).sin() * (t * 2.7).cos();
+            let c = [0.58, 0.46, 1.0];
+            let hi = mix(c, WHITE, 0.62);
+            let flick = 0.88 + 0.12 * (t * 5.0).sin() * (t * 2.3).cos();
             let body = Matrix3x2::identity();
-            p.glow(body, 0.0, 0.0, 1.0, 0.92, hi, 0.45 * flick)?;
-            let pad = p.path("sh_arm_pad", &[M(0.4, 0.02), Q(0.56, -0.22, 0.82, -0.12), Q(0.98, -0.02, 0.9, 0.2), Q(0.74, 0.3, 0.46, 0.22), Z])?;
+            p.glow(body, 0.0, 0.0, 0.96, 0.88, hi, 0.48 * flick)?;
+            let pad = p.path("sh_arm_pad", &[M(0.38, 0.04), Q(0.54, -0.2, 0.78, -0.1), Q(0.92, 0.0, 0.84, 0.22), Q(0.68, 0.32, 0.42, 0.24), Z])?;
             for s in [Matrix3x2::identity(), flip()] {
                 p.at(s);
-                let g = p.linear(0.6, -0.2, 0.7, 0.2, &[(0.0, mix(hi, WHITE, 0.3), 0.95), (1.0, c, 0.8)])?;
+                let g = p.linear(0.58, -0.18, 0.68, 0.22, &[(0.0, mix(hi, WHITE, 0.35), 0.92), (1.0, c, 0.78)])?;
                 p.fill_with(s, &pad, &g);
-                p.stroke(s, &pad, hi, 0.95 * flick, 0.024);
+                p.stroke(s, &pad, hi, 0.95 * flick, 0.022);
             }
         }
-        // Sage marks: orange-red pigment above and below the eyes.
+        // Sage marks: warm vermilion Sage Mode eyeshadow cleanly aligned to eye_y ~ 0.04.
         (8, Front) => {
-            let orange = [0.86, 0.24, 0.1];
-            let upper = p.path("sh_sage_up", &[M(0.075, -0.04), Q(0.185, -0.17, 0.315, -0.035), Q(0.185, -0.095, 0.075, -0.04), Z])?;
-            let lower = p.path("sh_sage_low", &[M(0.1, 0.178), Q(0.19, 0.25, 0.29, 0.178), Q(0.19, 0.207, 0.1, 0.178), Z])?;
-            let pulse = 0.88 + 0.12 * (t * 2.0).sin();
+            let orange = [0.92, 0.28, 0.12];
+            let upper = p.path("sh_sage_up", &[M(0.075, -0.055), Q(0.18, -0.145, 0.295, -0.05), Q(0.18, -0.09, 0.075, -0.055), Z])?;
+            let lower = p.path("sh_sage_low", &[M(0.1, 0.125), Q(0.18, 0.185, 0.275, 0.125), Q(0.18, 0.15, 0.1, 0.125), Z])?;
+            let pulse = 0.9 + 0.1 * (t * 2.0).sin();
             for s in [Matrix3x2::identity(), flip()] {
                 p.fill(s * h, &upper, orange, pulse);
-                p.stroke(s * h, &upper, mix(orange, INK, 0.4), 0.6 * pulse, 0.008);
-                p.fill(s * h, &lower, mix(orange, [0.8, 0.16, 0.1], 0.4), pulse);
+                p.stroke(s * h, &upper, mix(orange, INK, 0.38), 0.55 * pulse, 0.008);
+                p.fill(s * h, &lower, mix(orange, [0.84, 0.16, 0.1], 0.35), pulse);
             }
-            p.glow(h, 0.0, 0.05, 0.44, 0.16, orange, 0.18 * pulse)?;
+            p.glow(h, 0.0, 0.04, 0.42, 0.14, orange, 0.2 * pulse)?;
         }
-        // A big summoning scroll strapped across the back.
+        // Summon scroll: cute giant red-and-cream toad summoning scroll strapped across the back.
         (9, Back) => {
-            let f = rot(-30.0, 0.0, 0.0) * tr(0.0, -0.1) * h;
-            let paper = [0.96, 0.92, 0.82];
-            let body = p.path("sh_scroll", &rrect(-0.78, -0.09, 0.78, 0.09, 0.08))?;
+            let f = rot(-26.0, 0.0, 0.0) * tr(0.0, -0.08) * h;
+            let red = [0.84, 0.18, 0.22];
+            let paper = [0.98, 0.94, 0.85];
+            let body = p.path("sh_scroll", &rrect(-0.74, -0.095, 0.74, 0.095, 0.085))?;
             p.at(f);
-            let b = p.linear(0.0, -0.09, 0.0, 0.09, &[(0.0, WHITE, 1.0), (0.5, paper, 1.0), (1.0, mix(paper, INK, 0.2), 1.0)])?;
+            let b = p.linear(0.0, -0.095, 0.0, 0.095, &[(0.0, mix(red, WHITE, 0.22), 1.0), (0.55, red, 1.0), (1.0, mix(red, INK, 0.25), 1.0)])?;
             p.fill_with(f, &body, &b);
-            p.stroke(f, &body, edge(paper), 1.0, lw);
-            for x in [-0.4f32, 0.4] {
-                p.fill(f, &p.path(if x < 0.0 { "sh_scroll_band_l" } else { "sh_scroll_band_r" }, &rrect(x - 0.05, -0.095, x + 0.05, 0.095, 0.01))?, [0.8, 0.16, 0.2], 1.0);
+            p.fill(f, &p.path("sh_scroll_mid", &rrect(-0.34, -0.09, 0.34, 0.09, 0.02))?, paper, 1.0);
+            p.stroke(f, &body, edge(red), 1.0, lw);
+            for x in [-0.36f32, 0.36] {
+                p.fill(f, &p.path(if x < 0.0 { "sh_scroll_band_l" } else { "sh_scroll_band_r" }, &rrect(x - 0.04, -0.098, x + 0.04, 0.098, 0.015))?, [0.95, 0.76, 0.28], 1.0);
             }
-            for x in [-0.78f32, 0.78] {
-                p.obj_el(f, x, 0.0, 0.045, 0.1, [0.5, 0.34, 0.22]);
+            for x in [-0.74f32, 0.74] {
+                p.obj_el(f, x, 0.0, 0.048, 0.105, [0.46, 0.3, 0.2]);
+                p.fill_el(f, x, 0.0, 0.024, 0.055, [0.95, 0.78, 0.32], 1.0);
             }
         }
         // Two shuriken orbiting the head (behind it on the far side).
@@ -902,30 +906,30 @@ pub(super) fn accessory(p: &Pen, i: usize, layer: Layer, h: Matrix3x2, t: f32) -
                 if (ang.sin() > 0.0) != (layer == Front) {
                     continue;
                 }
-                let (x, y) = (ang.cos() * 0.6, -0.12 + ang.sin() * 0.16);
-                let k = 0.13 * (1.0 + 0.15 * ang.sin());
-                let m = put(x, y, k, t * 540.0) * h;
+                let (x, y) = (ang.cos() * 0.58, -0.12 + ang.sin() * 0.15);
+                let k = 0.125 * (1.0 + 0.15 * ang.sin());
+                let m = put(x, y, k, t * 480.0) * h;
                 p.at(m);
                 let steel = p.linear(-1.0, -1.0, 1.0, 1.0, &[(0.0, STEEL_HI, 1.0), (1.0, STEEL_LO, 1.0)])?;
                 p.fill_with(m, &star, &steel);
                 p.stroke(m, &star, [0.25, 0.27, 0.32], 1.0, lw / k);
             }
         }
-        // A sand gourd on the back, a red sash round its waist.
+        // Sand gourd: cute rounded chibi sand gourd on the back with cork & crimson sash.
         (11, Back) => {
-            let tan = [0.82, 0.62, 0.42];
-            let f = rot(18.0, 0.0, 0.0) * tr(0.38, -0.16) * h;
+            let tan = [0.86, 0.65, 0.44];
+            let f = rot(16.0, 0.0, 0.0) * tr(0.36, -0.14) * h;
             p.at(f);
-            let b = p.radial(-0.08, -0.12, 0.42, 0.42, &[(0.0, mix(tan, WHITE, 0.3), 1.0), (1.0, mix(tan, INK, 0.2), 1.0)], 1.0)?;
+            let b = p.radial(-0.08, -0.12, 0.4, 0.4, &[(0.0, mix(tan, WHITE, 0.34), 1.0), (1.0, mix(tan, INK, 0.2), 1.0)], 1.0)?;
             unsafe {
-                p.rt.FillEllipse(&super::ell(0.0, 0.05, 0.3, 0.32), &b);
-                p.rt.FillEllipse(&super::ell(0.0, -0.36, 0.17, 0.17), &b);
+                p.rt.FillEllipse(&super::ell(0.0, 0.05, 0.28, 0.3), &b);
+                p.rt.FillEllipse(&super::ell(0.0, -0.34, 0.16, 0.16), &b);
             }
-            p.ring(f, 0.0, 0.05, 0.3, 0.32, edge(tan), 1.0, lw);
-            p.ring(f, 0.0, -0.36, 0.17, 0.17, edge(tan), 1.0, lw);
-            p.fill_el(f, 0.0, -0.22, 0.1, 0.05, tan, 1.0);
-            p.obj(f, 1.0, &p.path("sh_gourd_cork", &rrect(-0.06, -0.6, 0.06, -0.5, 0.02))?, [0.9, 0.86, 0.78]);
-            p.obj(f, 1.0, &p.path("sh_gourd_sash", &rrect(-0.31, -0.04, 0.31, 0.04, 0.02))?, [0.72, 0.18, 0.2]);
+            p.ring(f, 0.0, 0.05, 0.28, 0.3, edge(tan), 1.0, lw);
+            p.ring(f, 0.0, -0.34, 0.16, 0.16, edge(tan), 1.0, lw);
+            p.fill_el(f, 0.0, -0.2, 0.1, 0.05, tan, 1.0);
+            p.obj(f, 1.0, &p.path("sh_gourd_cork", &rrect(-0.055, -0.56, 0.055, -0.47, 0.02))?, [0.92, 0.88, 0.8]);
+            p.obj(f, 1.0, &p.path("sh_gourd_sash", &rrect(-0.29, -0.04, 0.29, 0.04, 0.02))?, [0.78, 0.18, 0.22]);
         }
         _ => {}
     }

@@ -18,8 +18,8 @@ pub struct Notice {
     pub app: String,
     pub title: String,
     pub body: String,
-    /// A friend's Fuzzie (skin, accessory) shown instead of the bell.
-    pub fox: Option<(usize, usize)>,
+    /// A friend's Fuzzie look shown instead of the bell.
+    pub fox: Option<crate::mascot::Look>,
 }
 
 pub type Queue = Arc<Mutex<VecDeque<Notice>>>;

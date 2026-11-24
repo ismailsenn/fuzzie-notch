@@ -43,8 +43,8 @@ const BASE_SIZE: f32 = 100.0;
 const W_K: f32 = 1.9;
 const H_K: f32 = 1.85;
 const FOX_Y_K: f32 = 1.15;
-/// Where a pressed paw lands, in head widths below the centre: the taskbar's top edge.
-const PAW_LINE_K: f32 = 0.47;
+/// Resting belly/paws sit flush on the taskbar top edge; tapping paws dip slightly onto it.
+const PAW_LINE_K: f32 = 0.44;
 
 const WM_DESK_HIT: u32 = WM_APP + 7;
 const WM_DESK_RESYNC: u32 = WM_APP + 8;
@@ -150,6 +150,19 @@ struct Desk {
     head_target: f32,
     ear_bounce: [f32; 2],
     hype: f32,
+    /// Smooth sleep/wake blend (0 awake .. 1 deeply asleep).
+    sleep_mix: f32,
+    /// Playful lying-on-back yarn-ball mode state.
+    yarn_mode: bool,
+    yarn_mix: f32,
+    yarn_x: f32,
+    yarn_y: f32,
+    yarn_vx: f32,
+    yarn_vy: f32,
+    yarn_rot: f32,
+    yarn_vrot: f32,
+    yarn_taps: u32,
+    yarn_until: Instant,
     last_hit: Instant,
     last_body: Instant,
     last_tick: Instant,
@@ -246,6 +259,9 @@ pub fn set_state(sleeping: bool, hidden: bool) {
         }
         if d.sleeping != sleeping {
             d.sleeping = sleeping;
+            if sleeping {
+                d.yarn_mode = false;
+            }
             d.eyes_shut = false;
             d.blink_left = 0;
             d.schedule_blink();
@@ -297,14 +313,23 @@ fn taskbar_y(scale: f32, size: f32) -> i32 {
     taskbar_y_in(&work_area(), scale, size)
 }
 
-/// Keeps a window of `w` × `h` at `p` inside the monitor nearest to `probe`: on
-/// the taskbar it sits on that monitor's taskbar, otherwise anywhere on its screen.
+/// Keeps the visible mascot flush against all 4 screen edges and corners (ignoring
+/// the transparent padding around the mascot in the layered window).
 fn clamp_to_screen(p: POINT, probe: POINT, w: i32, h: i32, on_taskbar: bool, scale: f32, size: f32) -> POINT {
     let (mon, work) = monitor_at(probe);
+    let pad_x = ((W_K * 0.5 - 0.54) * size * scale).round() as i32;
+    let pad_top = ((FOX_Y_K - 0.62) * size * scale).round() as i32;
+    let pad_bot = ((H_K - FOX_Y_K - 0.48) * size * scale).round() as i32;
     if on_taskbar {
-        POINT { x: p.x.clamp(work.left, (work.right - w).max(work.left)), y: taskbar_y_in(&work, scale, size) }
+        let lo = work.left - pad_x;
+        let hi = (work.right - w + pad_x).max(lo);
+        POINT { x: p.x.clamp(lo, hi), y: taskbar_y_in(&work, scale, size) }
     } else {
-        POINT { x: p.x.clamp(mon.left, (mon.right - w).max(mon.left)), y: p.y.clamp(mon.top, (mon.bottom - h).max(mon.top)) }
+        let lo_x = mon.left - pad_x;
+        let hi_x = (mon.right - w + pad_x).max(lo_x);
+        let lo_y = mon.top - pad_top;
+        let hi_y = (mon.bottom - h + pad_bot).max(lo_y);
+        POINT { x: p.x.clamp(lo_x, hi_x), y: p.y.clamp(lo_y, hi_y) }
     }
 }
 
@@ -413,6 +438,17 @@ fn open(s: &Settings) -> Result<()> {
             head_target: 0.0,
             ear_bounce: [0.0; 2],
             hype: 0.0,
+            sleep_mix: 0.0,
+            yarn_mode: false,
+            yarn_mix: 0.0,
+            yarn_x: 0.0,
+            yarn_y: -0.08,
+            yarn_vx: 0.0,
+            yarn_vy: 0.0,
+            yarn_rot: 0.0,
+            yarn_vrot: 0.0,
+            yarn_taps: 0,
+            yarn_until: Instant::now(),
             last_hit: Instant::now(),
             last_body: Instant::now(),
             last_tick: Instant::now(),
@@ -449,7 +485,7 @@ impl Desk {
     }
 
     fn on_blink_timer(&mut self) {
-        if self.blink_on && !self.sleeping && !self.hidden {
+        if self.blink_on && !self.sleeping && !self.hidden && self.hype <= 0.25 {
             self.blinks += 1;
             // Shut now; every fourth blink is a double one (shut, open, shut, open).
             self.eyes_shut = true;
@@ -489,12 +525,16 @@ impl Desk {
         let now = Instant::now();
         let gap_ms = now.duration_since(self.last_hit).as_millis();
         self.last_hit = now;
-        if gap_ms < 150 {
-            self.hype = (self.hype + 0.18).min(1.0);
-        } else if gap_ms < 260 {
-            self.hype = (self.hype + 0.11).min(1.0);
+        if gap_ms < 160 {
+            self.hype = (self.hype + 0.30).min(1.0);
+        } else if gap_ms < 240 {
+            self.hype = (self.hype + 0.22).min(1.0);
         } else {
-            self.hype = (self.hype + 0.05).min(1.0);
+            self.hype = (self.hype + 0.14).min(1.0);
+        }
+        if self.hype > 0.25 {
+            self.eyes_shut = false;
+            self.blink_left = 0;
         }
 
         // Crisp paws on every key; rate-limited gentle body/head pulse so fast typing never jitters.
@@ -504,6 +544,30 @@ impl Desk {
             self.ear_bounce[side] = 4.5 * calm;
             self.head_target = (if side == 0 { -0.45 } else { 0.45 }) * calm;
             self.last_body = now;
+        }
+
+        // Organic playful yarn-ball rhythm: every ~55 taps Fuzzie smoothly rolls onto its back
+        // and bats a bouncing yarn ball with each tap for ~20s, then glides back to taskbar taps.
+        if self.yarn_mode {
+            self.yarn_vy = -1.65;
+            self.yarn_vx = if side == 0 { 0.36 } else { -0.36 };
+            self.yarn_vrot = if side == 0 { 240.0 } else { -240.0 };
+            if now >= self.yarn_until {
+                self.yarn_mode = false;
+                self.yarn_taps = 0;
+            }
+        } else if !self.sleeping {
+            self.yarn_taps += 1;
+            if self.yarn_taps >= 55 {
+                self.yarn_mode = true;
+                self.yarn_taps = 0;
+                self.yarn_until = now + std::time::Duration::from_secs(20);
+                self.yarn_x = 0.0;
+                self.yarn_y = -0.18;
+                self.yarn_vx = if side == 0 { 0.25 } else { -0.25 };
+                self.yarn_vy = -1.35;
+                self.yarn_vrot = if side == 0 { 180.0 } else { -180.0 };
+            }
         }
 
         self.down[side] = true;
@@ -521,7 +585,17 @@ impl Desk {
     }
 
     fn settling(&self) -> bool {
-        self.squash > 0.005 || self.squash_target > 0.005 || self.head_bob.abs() > 0.005 || self.ear_bounce[0].abs() > 0.05 || self.ear_bounce[1].abs() > 0.05 || self.hype > 0.005
+        let sleep_target = if self.sleeping { 1.0 } else { 0.0 };
+        let yarn_target = if self.yarn_mode && !self.sleeping { 1.0 } else { 0.0 };
+        self.squash > 0.005
+            || self.squash_target > 0.005
+            || self.head_bob.abs() > 0.005
+            || self.ear_bounce[0].abs() > 0.05
+            || self.ear_bounce[1].abs() > 0.05
+            || self.hype > 0.005
+            || (self.sleep_mix - sleep_target).abs() > 0.005
+            || (self.yarn_mix - yarn_target).abs() > 0.005
+            || self.yarn_mode
     }
 
     fn on_anim_timer(&mut self) {
@@ -536,9 +610,62 @@ impl Desk {
         for e in &mut self.ear_bounce {
             *e *= (-15.0 * dt).exp();
         }
-        if now.duration_since(self.last_hit).as_millis() > 380 {
-            self.hype = (self.hype - dt * 0.55).max(0.0);
+        if now.duration_since(self.last_hit).as_millis() > 750 {
+            self.hype = (self.hype - dt * 0.42).max(0.0);
         }
+
+        // Smooth organic sleep/wake transition (~0.65s into sleep, ~0.35s waking up).
+        let sleep_target = if self.sleeping { 1.0 } else { 0.0 };
+        let sleep_rate = if self.sleeping { 1.55 } else { 2.85 };
+        if self.sleep_mix < sleep_target {
+            self.sleep_mix = (self.sleep_mix + dt * sleep_rate).min(sleep_target);
+        } else if self.sleep_mix > sleep_target {
+            self.sleep_mix = (self.sleep_mix - dt * sleep_rate).max(sleep_target);
+        }
+
+        // Smooth organic roll into/out of yarn-ball play mode (~0.6s).
+        if self.yarn_mode && (self.sleeping || now >= self.yarn_until + std::time::Duration::from_secs(6)) {
+            self.yarn_mode = false;
+        }
+        let yarn_target = if self.yarn_mode && !self.sleeping { 1.0 } else { 0.0 };
+        if self.yarn_mix < yarn_target {
+            self.yarn_mix = (self.yarn_mix + dt * 1.65).min(yarn_target);
+        } else if self.yarn_mix > yarn_target {
+            self.yarn_mix = (self.yarn_mix - dt * 1.85).max(yarn_target);
+        }
+
+        // Yarn ball bounce & spin physics while playing.
+        if self.yarn_mix > 0.01 {
+            self.yarn_vy += 4.2 * dt; // soft gravity
+            self.yarn_x += self.yarn_vx * dt;
+            self.yarn_y += self.yarn_vy * dt;
+            self.yarn_vx *= (-2.2 * dt).exp();
+            self.yarn_rot = (self.yarn_rot + self.yarn_vrot * dt) % 360.0;
+            self.yarn_vrot *= (-1.8 * dt).exp();
+            // Soft horizontal bounds above the paws.
+            if self.yarn_x < -0.26 {
+                self.yarn_x = -0.26;
+                self.yarn_vx = self.yarn_vx.abs() * 0.6;
+            } else if self.yarn_x > 0.26 {
+                self.yarn_x = 0.26;
+                self.yarn_vx = -self.yarn_vx.abs() * 0.6;
+            }
+            // Top ceiling so the ball stays nicely inside the mascot window.
+            if self.yarn_y < -0.68 {
+                self.yarn_y = -0.68;
+                self.yarn_vy = self.yarn_vy.abs() * 0.25;
+            }
+            // Rest / gentle bounce on the raised paws.
+            if self.yarn_y > -0.06 {
+                self.yarn_y = -0.06;
+                if self.yarn_vy > 0.35 {
+                    self.yarn_vy = -self.yarn_vy * 0.38;
+                } else {
+                    self.yarn_vy = 0.0;
+                }
+            }
+        }
+
         if !self.settling() {
             self.squash = 0.0;
             self.squash_target = 0.0;
@@ -603,6 +730,9 @@ impl Desk {
                 head_bob: self.head_bob,
                 ear_bounce: self.ear_bounce,
                 hype: self.hype,
+                sleep_mix: self.sleep_mix,
+                yarn_mix: self.yarn_mix,
+                yarn_ball: [self.yarn_x, self.yarn_y, self.yarn_rot],
             };
             let _ = mascot::draw_bongo(&self.rt, &self.factory, look, cx, cy, self.size, self.sleeping, st);
             if self.rt.EndDraw(None, None).is_err() {
@@ -664,18 +794,25 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
     close();
     sync(&s);
     with_desk(|d| {
-        let cases: [(&str, [f32; 2], usize, bool, bool); 6] = [
-            ("desk_rest.png", [0.0, 0.0], s.acc, false, false),
-            ("desk_left.png", [1.0, 0.0], s.acc, false, false),
-            ("desk_right.png", [0.3, 1.0], s.acc, false, false),
-            ("desk_blink.png", [0.0, 0.0], s.acc, false, true),
-            ("desk_sleep.png", [0.0, 0.0], s.acc, true, false),
-            ("desk_helmet.png", [0.0, 1.0], 26, false, false),
+        let cases: [(&str, [f32; 2], usize, bool, bool, bool); 7] = [
+            ("desk_rest.png", [0.0, 0.0], s.acc, false, false, false),
+            ("desk_left.png", [1.0, 0.0], s.acc, false, false, false),
+            ("desk_right.png", [0.3, 1.0], s.acc, false, false, false),
+            ("desk_blink.png", [0.0, 0.0], s.acc, false, true, false),
+            ("desk_sleep.png", [0.0, 0.0], s.acc, true, false, false),
+            ("desk_helmet.png", [0.0, 1.0], 26, false, false, false),
+            ("desk_yarn.png", [0.9, 0.1], 0, false, false, true),
         ];
-        for (name, paws, acc, sleeping, blink) in cases {
+        for (name, paws, acc, sleeping, blink, yarn) in cases {
             d.forced = Some(paws);
             d.acc = acc;
             d.sleeping = sleeping;
+            d.sleep_mix = if sleeping { 1.0 } else { 0.0 };
+            d.yarn_mode = yarn;
+            d.yarn_mix = if yarn { 1.0 } else { 0.0 };
+            d.yarn_x = 0.06;
+            d.yarn_y = -0.34;
+            d.yarn_rot = 22.0;
             d.eyes_shut = blink;
             d.draw();
             let px = unsafe { std::slice::from_raw_parts(d.bits, (d.width * d.height * 4) as usize) };
@@ -683,6 +820,9 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
                 let _ = std::fs::write(dir.join(name), png);
             }
         }
+        d.yarn_mode = false;
+        d.yarn_mix = 0.0;
+        d.sleep_mix = 0.0;
         // The shinobi pack: every skin bare, then every accessory on one of them.
         let pack = &crate::mascot::PACKS[1];
         let first = pack.skins.start;
@@ -754,8 +894,28 @@ fn web_frames(dir: &std::path::Path) {
     let big = 240;
     let (size, cx) = (big as f32 / W_K, big as f32 / 2.0);
     let cy = FOX_Y_K * size + (big as f32 - H_K * size) / 2.0;
-    for (name, paws, sleeping, blink) in [("rest", [0.0, 0.0], false, 0.0), ("left", [1.0, 0.0], false, 0.0), ("right", [0.0, 1.0], false, 0.0), ("blink", [0.0, 0.0], false, 1.0), ("sleep", [0.0, 0.0], true, 0.0)] {
-        let st = mascot::BongoState { paws, blink, live: false, zt: 1.2, glow: true, squash: 0.0, head_bob: 0.0, ear_bounce: [0.0; 2], hype: 0.0 };
+    for (name, paws, sleeping, blink, yarn) in [
+        ("rest", [0.0, 0.0], false, 0.0, false),
+        ("left", [1.0, 0.0], false, 0.0, false),
+        ("right", [0.0, 1.0], false, 0.0, false),
+        ("blink", [0.0, 0.0], false, 1.0, false),
+        ("sleep", [0.0, 0.0], true, 0.0, false),
+        ("yarn", [0.85, 0.1], false, 0.0, true),
+    ] {
+        let st = mascot::BongoState {
+            paws,
+            blink,
+            live: false,
+            zt: 1.2,
+            glow: true,
+            squash: 0.0,
+            head_bob: 0.0,
+            ear_bounce: [0.0; 2],
+            hype: 0.0,
+            sleep_mix: if sleeping { 1.0 } else { 0.0 },
+            yarn_mix: if yarn { 1.0 } else { 0.0 },
+            yarn_ball: [0.06, -0.34, 22.0],
+        };
         if let Some(png) = fox_png(big, |rt, f| mascot::draw_bongo(rt, f, mascot::Look::default(), cx, cy, size, sleeping, st)) {
             let _ = std::fs::write(dir.with_file_name(format!("bongo_{name}.png")), png);
         }

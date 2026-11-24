@@ -31,20 +31,26 @@ pub struct Year {
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Friend {
-    pub bonks_sent: u64,
-    pub bonks_received: u64,
     pub kisses_sent: u64,
     pub kisses_received: u64,
-    pub pies_sent: u64,
-    pub pies_received: u64,
     pub pokes_sent: u64,
     pub pokes_received: u64,
-    pub rps_played: u64,
-    pub rps_won: u64,
-    pub rps_lost: u64,
-    pub races_won: u64,
-    pub visits_made: u64,
-    pub visits_received: u64,
+}
+
+/// Records a sent or received poke and saves stats.
+pub fn record_poke(sent: bool) {
+    if let Ok(mut st) = state().lock() {
+        if sent { st.friend.pokes_sent += 1; } else { st.friend.pokes_received += 1; }
+    }
+    save();
+}
+
+/// Records a sent or received kiss and saves stats.
+pub fn record_kiss(sent: bool) {
+    if let Ok(mut st) = state().lock() {
+        if sent { st.friend.kisses_sent += 1; } else { st.friend.kisses_received += 1; }
+    }
+    save();
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
