@@ -619,6 +619,9 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
             let _ = std::fs::write(dir.join(format!("icon_{px}.png")), png);
         }
     }
+    if std::env::var_os("FUZZIE_WEB_FRAMES").is_some() {
+        web_frames(&dir.join("web"));
+    }
     // A gallery of looks for the web page: whole foxes, skin + accessory.
     let looks = [(0, 0), (1, 22), (3, 9), (4, 4), (5, 24), (6, 7), (8, 13), (9, 17), (10, 25), (11, 5), (14, 8), (16, 16), (19, 6), (21, 19), (25, 15), (27, 18), (29, 21), (31, 20), (36, 11), (38, 3), (45, 14), (23, 26)];
     for (skin, acc) in looks {
@@ -629,6 +632,46 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
         }
     }
 }
+
+/// Animation frames for the web page: every skin (without the shinobi pack)
+/// on its own, and every accessory's back and front parts, on one loop of
+/// [`WEB_LOOP`] seconds, so the page can stack any skin with any accessory.
+fn web_frames(dir: &std::path::Path) {
+    let _ = std::fs::create_dir_all(dir);
+    let px = 200;
+    let k = px as f32;
+    let skins = mascot::SKINS.iter().position(|s| s.name == "Naruto").unwrap_or(mascot::SKINS.len());
+    let save = |name: String, skin: usize, acc: usize, layers: u8, t: f32| {
+        if let Some(png) = fox_png(px, |rt, f| mascot::draw_layers(rt, f, skin, acc, k * 0.5, k * 0.56, k * 0.42, t, layers)) {
+            let _ = std::fs::write(dir.join(name), png);
+        }
+    };
+    // The desktop fox's poses, large.
+    let big = 240;
+    let (size, cx) = (big as f32 / W_K, big as f32 / 2.0);
+    let cy = FOX_Y_K * size + (big as f32 - H_K * size) / 2.0;
+    for (name, paws, sleeping, blink) in [("rest", [0.0, 0.0], false, 0.0), ("left", [1.0, 0.0], false, 0.0), ("right", [0.0, 1.0], false, 0.0), ("blink", [0.0, 0.0], false, 1.0), ("sleep", [0.0, 0.0], true, 0.0)] {
+        if let Some(png) = fox_png(big, |rt, f| mascot::draw_bongo(rt, f, 0, 0, cx, cy, size, sleeping, paws, blink, 1.2, false, true)) {
+            let _ = std::fs::write(dir.with_file_name(format!("bongo_{name}.png")), png);
+        }
+    }
+    // A few frames past the loop, for the page builder to blend into its start.
+    for i in 0..WEB_FRAMES + 8 {
+        // Starting one blink period in puts the seam on a blink and the ear twitch mid-loop.
+        let t = WEB_LOOP + i as f32 * WEB_LOOP / WEB_FRAMES as f32;
+        for skin in 0..skins {
+            save(format!("skin_{skin}_{i:02}.png"), skin, 0, 1, t);
+        }
+        for acc in 1..27 {
+            save(format!("accb_{acc}_{i:02}.png"), 0, acc, 2, t);
+            save(format!("accf_{acc}_{i:02}.png"), 0, acc, 4, t);
+        }
+    }
+}
+
+/// One blink period, so the loop closes on the same blink.
+const WEB_LOOP: f32 = 4.3;
+const WEB_FRAMES: usize = 52;
 
 /// Draws with `paint` into a `px` square on a clear background, as PNG.
 fn fox_png(px: i32, paint: impl FnOnce(&windows::Win32::Graphics::Direct2D::ID2D1RenderTarget, &ID2D1Factory) -> windows::core::Result<()>) -> Option<Vec<u8>> {

@@ -578,6 +578,8 @@ fn glow_off() -> bool {
 thread_local! {
     // Set while the desktop fox draws: a still pose with only the eyes and paws moving.
     static BONGO: std::cell::Cell<Option<Bongo>> = const { std::cell::Cell::new(None) };
+    // What [`fox`] draws: 1 the fox itself, 2 accessory parts behind it, 4 accessory parts on it.
+    static LAYERS: std::cell::Cell<u8> = const { std::cell::Cell::new(7) };
 }
 
 /// The desktop fox: holding still (no breathing, swaying, tail or effects in
@@ -601,6 +603,18 @@ pub fn draw_head(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, cx
     BONGO.with(|c| c.set(Some(Bongo { paws: None, blink: 0.0, live: false, zt: 0.0, glow: true, head_only: true })));
     let r = draw(rt, factory, skin, 0, cx, cy, size, 1.0, false, 0.0);
     BONGO.with(|c| c.set(None));
+    r
+}
+
+/// One frame of the idle animation at `t` seconds, without the per-fox
+/// rhythm, drawing only `layers` (1 the fox, 2 accessory parts behind it,
+/// 4 accessory parts on it). Used to export frames for the web page.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_layers(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, acc: usize, cx: f32, cy: f32, size: f32, t: f32, layers: u8) -> Result<()> {
+    let phase = ((skin % SKINS.len()) as f32 * 0.618 + (acc % ACCESSORIES.len()) as f32 * 0.377).fract() * 11.0;
+    LAYERS.with(|c| c.set(layers));
+    let r = draw(rt, factory, skin, acc, cx, cy, size, 1.0, false, t - phase);
+    LAYERS.with(|c| c.set(7));
     r
 }
 
@@ -931,12 +945,17 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
     let sway = if sleeping { 6.0 + (t * 0.9).sin() } else { (t * 0.75).sin() * 3.0 };
     let head = rot(sway, 0.0, 0.36) * tr(0.0, bob);
     let fur = fur_brush(p, sk)?;
+    let show = LAYERS.with(|c| c.get());
 
     // Behind the fox.
-    if !tiny {
+    if !tiny && show & 1 != 0 {
         back_fx(p, sk, t)?;
     }
-    accessory(p, acc, Layer::Back, head, t)?;
+    if show & 2 != 0 {
+        accessory(p, acc, Layer::Back, head, t)?;
+    }
+
+    if show & 1 != 0 {
 
     // Tail, swishing behind the head (nine of them for the beast).
     if !tiny && !naruto::tails(p, sk, &fur, t, sleeping)? {
@@ -986,9 +1005,13 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
     naruto::over_head(p, sk, head)?;
     face(p, sk, head, sleeping, t)?;
     naruto::over_eyes(p, sk, head)?;
+    }
 
-    accessory(p, acc, Layer::Mid, head, t)?;
+    if show & 4 != 0 {
+        accessory(p, acc, Layer::Mid, head, t)?;
+    }
 
+    if show & 1 != 0 {
     // Paws resting in front, Bongo style.
     let paw = mix(sk.fur, sk.cream, 0.35);
     if head_only {
@@ -1027,8 +1050,12 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
     }
     }
 
-    accessory(p, acc, Layer::Front, head, t)?;
-    if !tiny {
+    }
+
+    if show & 4 != 0 {
+        accessory(p, acc, Layer::Front, head, t)?;
+    }
+    if !tiny && show & 1 != 0 {
         front_fx(p, sk, t)?;
     }
 

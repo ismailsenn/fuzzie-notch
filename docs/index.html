@@ -3,56 +3,82 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Fuzzie: a tiny notch for Windows, with a fox</title>
-<meta name="description" content="Fuzzie is a small desktop notch for Windows: now playing with synced lyrics, a shelf, clipboard history, notifications, friends and a fox with dozens of looks.">
-<meta property="og:title" content="Fuzzie: a tiny notch for Windows, with a fox">
-<meta property="og:description" content="Music, lyrics, shelf, clipboard, notifications and friends in a notch at the top of your screen. Free and open source.">
-<meta property="og:image" content="img/music.png">
+<title>Fuzzie: a notch up top, a fox down below</title>
+<meta name="description" content="Fuzzie is a small, free notch for Windows: now playing with synced lyrics, a shelf, clipboard history, notifications, friends, and a fox on your taskbar that taps along as you type.">
+<meta property="og:title" content="Fuzzie: a notch up top, a fox down below">
+<meta property="og:description" content="Music, lyrics, shelf, clipboard and friends in a notch at the top of your screen, and a fox on your taskbar. Free and open source for Windows.">
+<meta property="og:image" content="https://ismailsenn.github.io/fuzzie-notch/img/music.png">
+<meta name="theme-color" content="#0b0810">
 <link rel="icon" href="favicon.ico">
+<link rel="preload" href="fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+  /* Fraunces by Undercase Type, SIL Open Font License 1.1. */
+  @font-face { font-family: "Fraunces"; src: url("fonts/fraunces.woff2") format("woff2"); font-weight: 500 900; font-display: swap; }
+  @property --accent { syntax: "<color>"; inherits: true; initial-value: #ff8a3d; }
+  @property --w1 { syntax: "<color>"; inherits: true; initial-value: #ff8a3d; }
+  @property --w2 { syntax: "<color>"; inherits: true; initial-value: #8a5cff; }
+
   :root {
-    --bg: #0d0b10;
-    --panel: #17131a;
-    --panel-2: #1e1922;
-    --line: #2b2430;
-    --fg: #f7f0ea;
-    --dim: #b0a49c;
     --accent: #ff8a3d;
-    --accent-soft: rgba(255, 138, 61, 0.16);
+    --bg: #0b0810;
+    --panel: #141018;
+    --panel-2: #1b1520;
+    --line: rgba(255, 255, 255, .08);
+    --fg: #fbf3ec;
+    --dim: #b4a7a1;
+    --pink: #ff4d8d;
+    --violet: #8a5cff;
+    --teal: #2ee6c5;
+    --sun: #ffd23f;
+    --sky: #3d9bff;
+    --spring: cubic-bezier(.2, .9, .25, 1.18);
+    transition: --accent .7s ease;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; background: var(--bg); }
-  body { margin: 0; color: var(--fg); font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; overflow-x: hidden; }
+  body { margin: 0; color: var(--fg); background: var(--bg); font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
   a { color: inherit; }
   img { display: block; max-width: 100%; }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+  button { font: inherit; color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  .serif { font-family: "Fraunces", Georgia, serif; font-variation-settings: "SOFT" 100, "opsz" 144; }
+  .grad { background: linear-gradient(100deg, var(--accent), var(--pink) 55%, var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
-  /* Soft colour blobs drifting behind everything. */
-  .blobs { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
-  .blobs i { position: absolute; width: min(60vmax, 900px); height: min(60vmax, 900px); border-radius: 50%; filter: blur(90px); opacity: .22; animation: drift 26s ease-in-out infinite alternate; }
-  .blobs i:nth-child(1) { background: var(--accent); top: -420px; right: -260px; }
-  .blobs i:nth-child(2) { background: #6b3cff; bottom: -480px; left: -320px; opacity: .14; animation-duration: 32s; }
-  @keyframes drift { to { transform: translate(-8vmax, 6vmax) scale(1.1); } }
+  /* Two big soft lights behind the page; they only move with transforms. */
+  .glow { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .glow i { position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; opacity: .2; will-change: transform; animation: drift 30s ease-in-out infinite alternate; }
+  .glow i:nth-child(1) { background: radial-gradient(circle, var(--accent), transparent 62%); top: -38vmax; right: -24vmax; }
+  .glow i:nth-child(2) { background: radial-gradient(circle, var(--violet), transparent 62%); bottom: -44vmax; left: -30vmax; opacity: .16; animation-duration: 38s; }
+  @keyframes drift { to { transform: translate(-7vmax, 5vmax) scale(1.08); } }
 
-  /* ---------- the live notch at the top ---------- */
-  .notch-zone { position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 50; display: flex; flex-direction: column; align-items: center; }
-  .notch { width: 190px; height: 34px; background: #000; border-radius: 0 0 18px 18px; overflow: hidden; transition: width .45s cubic-bezier(.2,.9,.25,1.15), height .45s cubic-bezier(.2,.9,.25,1.15), border-radius .45s; box-shadow: 0 10px 30px rgba(0,0,0,.45); cursor: default; position: relative; }
-  .notch-zone:hover .notch, .notch.open { width: 440px; height: 150px; border-radius: 0 0 26px 26px; background: linear-gradient(180deg, #000 30%, color-mix(in srgb, var(--accent) 28%, #000)); }
-  .n-bar { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px 0 10px; font-weight: 600; font-size: 13px; }
+  /* ---------- the live notch at the top of the window ---------- */
+  .notch-zone { position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; align-items: center; }
+  .notch { width: 200px; height: 34px; background: #000; border-radius: 0 0 18px 18px; overflow: hidden; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,.5);
+    transition: width .5s var(--spring), height .5s var(--spring), border-radius .5s; }
+  .notch.ping { width: 300px; height: 52px; border-radius: 0 0 22px 22px; }
+  .notch-zone:hover .notch { width: 460px; height: 156px; border-radius: 0 0 28px 28px; background: linear-gradient(180deg, #000 30%, color-mix(in srgb, var(--accent) 30%, #000)); }
+  .n-bar { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px 0 10px; font-weight: 600; font-size: 13px; transition: opacity .2s; }
   .n-bar img { width: 24px; height: 24px; }
-  .n-bar .eq { display: flex; gap: 2px; align-items: flex-end; height: 12px; }
-  .n-bar .eq b { width: 3px; background: var(--accent); border-radius: 2px; animation: eq 1s ease-in-out infinite; }
-  .n-bar .eq b:nth-child(2) { animation-delay: -.3s; } .n-bar .eq b:nth-child(3) { animation-delay: -.6s; }
-  @keyframes eq { 0%,100% { height: 3px; } 50% { height: 12px; } }
+  .eq { display: flex; gap: 2px; align-items: flex-end; height: 12px; }
+  .eq b { width: 3px; background: var(--accent); border-radius: 2px; animation: eq 1s ease-in-out infinite; }
+  .eq b:nth-child(2) { animation-delay: -.3s; } .eq b:nth-child(3) { animation-delay: -.6s; } .eq b:nth-child(4) { animation-delay: -.8s; }
+  @keyframes eq { 0%, 100% { height: 3px; } 50% { height: 12px; } }
+  .n-ping { position: absolute; inset: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity .25s; }
+  .n-ping img { width: 40px; height: 40px; margin-left: -6px; }
+  .n-ping small { display: block; color: var(--dim); font-weight: 400; font-size: 12px; line-height: 1.2; }
+  .notch.ping .n-bar { opacity: 0; }
+  .notch.ping .n-ping { opacity: 1; transition-delay: .15s; }
+  .notch-zone:hover .n-ping { opacity: 0; transition-delay: 0s; }
+  .notch-zone:hover .n-bar { opacity: 1; }
   .n-body { display: flex; gap: 14px; padding: 6px 18px 0; opacity: 0; transform: translateY(-6px); transition: opacity .25s, transform .3s; }
-  .notch-zone:hover .n-body, .notch.open .n-body { opacity: 1; transform: none; transition-delay: .15s; }
-  .cover { width: 76px; height: 76px; border-radius: 12px; flex: none; background: linear-gradient(180deg, #3a1450 0%, #c0503a 55%, #ffb050 66%, #2a1a34 66%); position: relative; overflow: hidden; }
+  .notch-zone:hover .n-body { opacity: 1; transform: none; transition-delay: .15s; }
+  .cover { width: 78px; height: 78px; border-radius: 13px; flex: none; position: relative; overflow: hidden; background: linear-gradient(180deg, #3a1450 0%, #c0503a 55%, #ffb050 66%, #2a1a34 66%); }
   .cover::before { content: ""; position: absolute; left: 50%; top: 22%; width: 44px; height: 44px; margin-left: -22px; border-radius: 50%; background: repeating-linear-gradient(180deg, #ffd36b 0 5px, #ff8a3d 5px 7px); }
-  .cover::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 0; height: 0; margin-left: -26px; border: 26px solid transparent; border-bottom: 26px solid #4a3a55; border-top: 0; }
+  .cover::after { content: ""; position: absolute; left: 50%; bottom: 0; margin-left: -26px; border: 26px solid transparent; border-bottom-color: #4a3a55; border-top: 0; }
   .n-info { flex: 1; min-width: 0; }
   .n-title { font-weight: 600; font-size: 15px; }
   .n-artist { color: var(--dim); font-size: 13px; }
-  .n-lyric { font-size: 13px; font-weight: 600; margin-top: 6px; height: 20px; overflow: hidden; color: #fff; }
+  .n-lyric { font-size: 13px; font-weight: 600; margin-top: 6px; height: 20px; overflow: hidden; }
   .n-lyric span { display: block; animation: rise .5s ease; }
   @keyframes rise { from { transform: translateY(12px); opacity: 0; } }
   .n-prog { height: 4px; background: rgba(255,255,255,.18); border-radius: 2px; margin-top: 10px; overflow: hidden; }
@@ -61,176 +87,274 @@
   .hint { font-size: 12px; color: var(--dim); margin-top: 6px; transition: opacity .3s; }
   .notch-zone:hover .hint { opacity: 0; }
 
-  /* ---------- header & hero ---------- */
-  header.top { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; text-decoration: none; }
+  /* ---------- header ---------- */
+  header.top { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+  @media (min-width: 961px) { nav { margin-right: -8px; } nav a:first-child { margin-left: 0; } header.top { padding-top: 58px; } }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 21px; text-decoration: none; }
   .brand img { width: 34px; height: 34px; }
-  nav a { color: var(--dim); text-decoration: none; margin-left: 22px; font-size: 15px; }
+  nav a { color: var(--dim); text-decoration: none; margin-left: 22px; font-size: 15px; transition: color .2s; }
   nav a:hover { color: var(--fg); }
-  .hero { display: grid; grid-template-columns: 1.1fr .9fr; align-items: center; gap: 30px; min-height: min(78vh, 720px); padding: 40px 0 20px; }
-  .badge { display: inline-flex; gap: 8px; align-items: center; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 99px; }
-  h1 { font-size: clamp(52px, 8vw, 96px); line-height: .98; margin: 22px 0 18px; letter-spacing: -.035em; font-weight: 800; }
-  h1 span { color: var(--accent); }
-  .lead { color: var(--dim); font-size: 19px; max-width: 520px; margin: 0 0 30px; }
-  .btns { display: flex; flex-wrap: wrap; gap: 12px; }
-  .btn { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; padding: 14px 24px; border-radius: 14px; text-decoration: none; transition: transform .15s, box-shadow .2s, background .2s; border: 1px solid transparent; }
+  nav .gh { color: var(--fg); border: 1px solid var(--line); padding: 7px 14px; border-radius: 99px; background: rgba(255,255,255,.04); }
+
+  /* ---------- hero ---------- */
+  .hero { text-align: center; padding: 56px 0 0; }
+  .badge { display: inline-flex; gap: 8px; align-items: center; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: color-mix(in srgb, var(--accent) 80%, #fff); font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 99px; }
+  .badge b { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 4px rgba(46,230,197,.2); }
+  h1 { font-size: clamp(46px, 8.2vw, 104px); line-height: .98; letter-spacing: -.03em; font-weight: 800; margin: 24px auto 22px; max-width: 980px; }
+  .lead { color: var(--dim); font-size: clamp(17px, 2vw, 20px); max-width: 640px; margin: 0 auto 32px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; padding: 15px 26px; border-radius: 16px; text-decoration: none; border: 1px solid transparent; transition: transform .2s var(--spring), box-shadow .25s, background .2s; }
   .btn svg { width: 19px; height: 19px; }
-  .btn.primary { background: var(--accent); color: #1a0d05; box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 40%, transparent); }
-  .btn.primary:hover { transform: translateY(-2px); box-shadow: 0 16px 40px color-mix(in srgb, var(--accent) 50%, transparent); }
-  .btn.ghost { border-color: var(--line); color: var(--fg); background: rgba(255,255,255,.03); }
-  .btn.ghost:hover { background: rgba(255,255,255,.07); }
+  .btn.primary { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--pink))); color: #1a0d05; box-shadow: 0 12px 34px color-mix(in srgb, var(--accent) 42%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
+  .btn.primary:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 18px 44px color-mix(in srgb, var(--accent) 55%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
+  .btn.ghost { border-color: var(--line); background: rgba(255,255,255,.04); }
+  .btn.ghost:hover { background: rgba(255,255,255,.08); transform: translateY(-2px); }
   .meta { color: var(--dim); font-size: 13.5px; margin-top: 14px; }
 
-  .stage { position: relative; height: 420px; display: grid; place-items: center; }
-  .stage::before { content: ""; position: absolute; width: 330px; height: 330px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%); }
-  .stage .fox { width: 360px; position: relative; animation: bob 3.2s ease-in-out infinite; filter: drop-shadow(0 24px 40px rgba(0,0,0,.5)); cursor: pointer; }
-  .stage .fox.pop { animation: pop .45s cubic-bezier(.3,1.6,.5,1), bob 3.2s ease-in-out .45s infinite; }
-  @keyframes bob { 50% { transform: translateY(-12px); } }
-  @keyframes pop { from { transform: scale(.7) rotate(-6deg); opacity: .2; } }
-  .stage .name { position: absolute; bottom: 18px; font-size: 14px; color: var(--dim); background: rgba(0,0,0,.35); border: 1px solid var(--line); padding: 4px 12px; border-radius: 99px; }
-  .float { position: absolute; font-size: 22px; animation: float 6s ease-in-out infinite; opacity: .8; color: var(--accent); pointer-events: none; }
-  @keyframes float { 0% { transform: translateY(20px); opacity: 0; } 20% { opacity: .9; } 100% { transform: translateY(-120px) rotate(18deg); opacity: 0; } }
+  /* The desktop scene: a screen with the notch on top and the fox on the taskbar. */
+  .scene-wrap { margin: 64px auto 0; max-width: 1080px; perspective: 1600px; }
+  .scene { container-type: inline-size; position: relative; aspect-ratio: 16 / 9; border-radius: 22px; overflow: hidden; border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 50px 120px -30px color-mix(in srgb, var(--w1) 45%, transparent), 0 30px 80px rgba(0,0,0,.55); transform: rotateX(8deg); transform-origin: 50% 100%; transition: transform .9s var(--spring), box-shadow .6s; }
+  .scene.flat { transform: none; }
+  .wall { position: absolute; inset: 0; transition: --w1 .9s ease, --w2 .9s ease;
+    background: radial-gradient(60% 80% at 18% 100%, var(--w1), transparent 70%), radial-gradient(55% 75% at 88% 10%, var(--w2), transparent 70%), linear-gradient(160deg, #1a1222, #0d0a12); }
+  .wall::after { content: ""; position: absolute; inset: 0; background: radial-gradient(40% 40% at 60% 70%, rgba(255,255,255,.08), transparent 70%); }
+  .win { position: absolute; border-radius: 1.2cqw; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); box-shadow: 0 2cqw 4cqw rgba(0,0,0,.25); }
+  .win::before { content: ""; position: absolute; left: 1.2cqw; top: 1cqw; width: 4cqw; height: .8cqw; border-radius: .4cqw; background: rgba(255,255,255,.18); }
+  .win.a { left: 7%; top: 30%; width: 34%; height: 44%; }
+  .win.b { right: 6%; top: 36%; width: 26%; height: 36%; background: rgba(255,255,255,.05); }
+  .win i { position: absolute; left: 1.2cqw; right: 1.2cqw; height: .9cqw; border-radius: .45cqw; background: rgba(255,255,255,.1); }
+  .scene-notch { position: absolute; top: 0; left: 50%; width: 54cqw; transform: translateX(-50%); display: flex; justify-content: center; }
+  .scene-notch img { max-width: 100%; transform-origin: 50% 0; transition: transform .55s var(--spring), opacity .3s; filter: drop-shadow(0 1.6cqw 2.4cqw rgba(0,0,0,.5)); }
+  .scene-notch img.tuck { transform: scale(.42, .14); opacity: 0; transition: transform .28s ease-in, opacity .22s ease-in; }
+  .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 5.2cqw; background: rgba(18,14,22,.78); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid rgba(255,255,255,.08); display: flex; align-items: center; justify-content: center; gap: 1.3cqw; }
+  .taskbar u { width: 2.7cqw; height: 2.7cqw; border-radius: .7cqw; text-decoration: none; }
+  .taskbar u:nth-child(1) { background: conic-gradient(from 45deg, #3d9bff 0 25%, #2ee6c5 0 50%, #3d9bff 0 75%, #2ee6c5 0); border-radius: .5cqw; transform: scale(.85); }
+  .taskbar u:nth-child(2) { background: rgba(255,255,255,.14); width: 9cqw; border-radius: 99px; }
+  .taskbar u:nth-child(3) { background: linear-gradient(135deg, #ffd23f, #ff8a3d); }
+  .taskbar u:nth-child(4) { background: linear-gradient(135deg, #3d9bff, #8a5cff); border-radius: 50%; }
+  .taskbar u:nth-child(5) { background: linear-gradient(135deg, #1ed760, #0f9f48); border-radius: 50%; }
+  .taskbar u:nth-child(6) { background: linear-gradient(135deg, #ff4d8d, #8a5cff); }
+  .tb-clock { position: absolute; right: 1.8cqw; font-size: 1.25cqw; line-height: 1.3; text-align: right; color: rgba(255,255,255,.85); }
+  .tb-fox { position: absolute; z-index: 2; bottom: 3.1cqw; left: 66%; width: 11cqw; pointer-events: none; }
+  .type-hint { position: absolute; left: 50%; bottom: 7.4cqw; transform: translateX(-50%); font-size: 1.35cqw; color: rgba(255,255,255,.75); background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.12); padding: .5cqw 1.4cqw; border-radius: 99px; white-space: nowrap; transition: opacity .5s; }
+  .type-hint kbd { font: inherit; font-weight: 700; color: #fff; }
+  .scene.typed .type-hint { opacity: 0; }
+  .presses { position: absolute; left: 66%; bottom: 14.6cqw; width: 11cqw; text-align: center; font-size: 1.3cqw; font-weight: 700; color: #fff; opacity: 0; transition: opacity .4s; }
+  .scene.typed .presses { opacity: .9; }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 26px auto 10px; }
+  .tab { font-size: 14.5px; font-weight: 600; color: var(--dim); background: rgba(255,255,255,.03); border: 1px solid var(--line); padding: 8px 16px; border-radius: 99px; cursor: pointer; transition: color .2s, background .25s, border-color .25s, transform .2s var(--spring); }
+  .tab:hover { color: var(--fg); transform: translateY(-2px); }
+  .tab.on { background: var(--fg); color: #120d14; border-color: var(--fg); }
+  .tab-text { color: var(--dim); font-size: 15px; min-height: 26px; margin: 4px auto 0; max-width: 620px; }
+
+  /* ---------- the moving strip ---------- */
+  .strip-clip { overflow: hidden; padding: 30px 0; margin-top: 60px; }
+  .strip { width: 106vw; margin: 0 0 0 -3vw; padding: 18px 0; border-block: 1px solid var(--line); overflow: hidden; background: rgba(255,255,255,.015); transform: rotate(-1.2deg); }
+  .strip-row { display: flex; gap: 14px; width: max-content; animation: slide 46s linear infinite; }
+  .strip:hover .strip-row { animation-play-state: paused; }
+  @keyframes slide { to { transform: translateX(-50%); } }
+  .chip { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; font-weight: 700; font-size: 17px; padding: 8px 18px 8px 8px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); }
+  .chip i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 15px; color: #140c10; }
 
   /* ---------- sections ---------- */
-  section { padding: 100px 0 10px; }
-  .kicker { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
-  h2 { font-size: clamp(34px, 4.6vw, 52px); line-height: 1.05; margin: 10px 0 12px; letter-spacing: -.025em; }
-  .sub { color: var(--dim); font-size: 18px; max-width: 620px; margin: 0 0 36px; }
+  section { padding: 120px 0 0; }
+  .kicker { display: inline-flex; align-items: center; gap: 8px; color: color-mix(in srgb, var(--accent) 85%, #fff); font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+  .kicker::before { content: ""; width: 18px; height: 2px; border-radius: 2px; background: currentColor; }
+  h2 { font-size: clamp(38px, 5.4vw, 64px); line-height: 1.02; margin: 12px 0 14px; letter-spacing: -.025em; font-weight: 800; }
+  .sub { color: var(--dim); font-size: 18px; max-width: 640px; margin: 0 0 40px; }
 
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  .card { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: 22px; padding: 22px; transition: transform .25s, border-color .25s; overflow: hidden; }
-  .card:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-  .card h3 { margin: 16px 0 4px; font-size: 19px; }
+  /* Feature cards: each with its own colour and a little live demo. */
+  .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+  .card { --c: var(--accent); position: relative; grid-column: span 2; border-radius: 26px; padding: 22px; overflow: hidden; border: 1px solid var(--line);
+    background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--c) 22%, transparent), transparent 60%), linear-gradient(180deg, var(--panel-2), var(--panel)); transition: transform .35s var(--spring), border-color .3s; }
+  .card::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s; background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--c) 22%, transparent), transparent 70%); }
+  .card:hover { transform: translateY(-5px); border-color: color-mix(in srgb, var(--c) 50%, transparent); }
+  .card:hover::after { opacity: 1; }
+  .card.wide { grid-column: span 3; }
+  .card h3 { margin: 18px 0 4px; font-size: 20px; letter-spacing: -.01em; }
   .card p { margin: 0; color: var(--dim); font-size: 15px; }
-  .demo { height: 130px; border-radius: 16px; background: #000; position: relative; overflow: hidden; display: grid; place-items: center; }
-  .lyr { text-align: center; font-weight: 600; font-size: 14px; line-height: 26px; }
-  .lyr div { color: rgba(255,255,255,.3); transition: color .4s, transform .4s; }
-  .lyr div.on { color: #fff; transform: scale(1.06); }
-  .demo .mini { width: 110px; animation: bob 1.1s ease-in-out infinite; }
-  .demo .note { position: absolute; color: var(--accent); animation: float 2.6s linear infinite; }
+  .card .ico { position: absolute; top: 18px; right: 18px; width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--c); font-size: 17px; }
+  .demo { height: 150px; border-radius: 18px; background: #050307; position: relative; overflow: hidden; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.05); }
+  .lyr { text-align: center; font-weight: 700; font-size: 15px; line-height: 28px; }
+  .lyr div { color: rgba(255,255,255,.28); transition: color .45s, transform .45s; }
+  .lyr div.on { color: #fff; transform: scale(1.07); text-shadow: 0 0 18px color-mix(in srgb, var(--c) 70%, transparent); }
+  .players { display: flex; gap: 12px; align-items: center; }
+  .players span { width: 50px; height: 50px; border-radius: 15px; display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #fff; animation: hop 2.4s ease-in-out infinite; }
+  .players span:nth-child(2) { animation-delay: .2s; } .players span:nth-child(3) { animation-delay: .4s; } .players span:nth-child(4) { animation-delay: .6s; }
+  @keyframes hop { 0%, 60%, 100% { transform: none; } 30% { transform: translateY(-10px); } }
+  .bars { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; align-items: flex-end; height: 26px; }
+  .bars b { width: 5px; border-radius: 3px; background: var(--c); animation: eq 1.1s ease-in-out infinite; }
   .files { display: flex; gap: 10px; }
-  .file { width: 62px; height: 76px; border-radius: 12px; background: #1c1820; border: 1px solid #2e2733; display: grid; place-items: center; font-size: 11px; color: var(--dim); animation: drop 3.6s ease-in-out infinite; }
+  .file { width: 62px; height: 76px; border-radius: 13px; background: #1c1820; border: 1px solid #2e2733; display: grid; place-items: center; font-size: 11px; color: var(--dim); animation: drop 3.6s ease-in-out infinite; }
   .file b { display: block; font-size: 22px; text-align: center; }
   .file:nth-child(2) { animation-delay: .4s; } .file:nth-child(3) { animation-delay: .8s; }
-  @keyframes drop { 0%, 8% { transform: translateY(-110px); opacity: 0; } 25%, 85% { transform: none; opacity: 1; } 100% { opacity: 0; } }
-  .clips { width: 80%; display: grid; gap: 6px; }
-  .clip { background: #1c1820; border: 1px solid #2e2733; border-radius: 9px; font-size: 12.5px; padding: 5px 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: slide 4.5s ease-in-out infinite; }
-  .clip:nth-child(1) { color: var(--fg); }
+  @keyframes drop { 0%, 8% { transform: translateY(-120px) rotate(-8deg); opacity: 0; } 25%, 85% { transform: none; opacity: 1; } 100% { opacity: 0; } }
+  .clips { width: 82%; display: grid; gap: 6px; }
+  .clip { background: #1c1820; border: 1px solid #2e2733; border-radius: 10px; font-size: 12.5px; padding: 6px 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: cin 4.5s ease-in-out infinite; }
+  .clip:nth-child(1) { color: var(--fg); border-color: color-mix(in srgb, var(--c) 50%, #2e2733); }
   .clip:nth-child(2) { animation-delay: .15s; } .clip:nth-child(3) { animation-delay: .3s; }
-  @keyframes slide { 0%, 10% { transform: translateY(-34px); opacity: 0; } 25%, 100% { transform: none; opacity: 1; } }
-  .pair { display: flex; align-items: center; gap: 8px; }
-  .pair img { width: 84px; }
-  .pair img:last-child { transform: scaleX(-1); }
-  .heart { color: #ff6b9a; font-size: 22px; animation: beat 1.2s ease-in-out infinite; }
-  @keyframes beat { 30% { transform: scale(1.35); } }
-  .meter { width: 78%; }
-  .meter div { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--dim); margin: 8px 0 4px; }
-  .meter i { display: block; height: 6px; border-radius: 3px; background: #2a2430; overflow: hidden; }
-  .meter i b { display: block; height: 100%; width: 3%; background: var(--accent); border-radius: 3px; animation: blip 2.4s ease-in-out infinite; }
-  @keyframes blip { 50% { width: 6%; } }
+  @keyframes cin { 0%, 10% { transform: translateY(-34px); opacity: 0; } 25%, 100% { transform: none; opacity: 1; } }
+  .hud { display: flex; align-items: center; gap: 12px; background: #000; border-radius: 0 0 20px 20px; padding: 12px 18px; position: absolute; top: 0; width: 72%; animation: hud 4s var(--spring) infinite; font-size: 13px; font-weight: 600; }
+  .hud i { flex: 1; height: 5px; border-radius: 3px; background: rgba(255,255,255,.15); overflow: hidden; }
+  .hud i b { display: block; height: 100%; width: 60%; background: var(--c); border-radius: 3px; animation: vol 4s ease-in-out infinite; }
+  @keyframes hud { 0%, 6% { transform: translateY(-110%); } 18%, 78% { transform: none; } 92%, 100% { transform: translateY(-110%); } }
+  @keyframes vol { 0%, 25% { width: 40%; } 55%, 100% { width: 75%; } }
+  .pair { display: flex; align-items: center; gap: 4px; }
+  .pair .fx { width: 104px; }
+  .heart { color: var(--c); font-size: 24px; animation: beat 1.2s ease-in-out infinite; }
+  @keyframes beat { 30% { transform: scale(1.4); } }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 86%; text-align: center; }
+  .stats b { display: block; font-size: 30px; line-height: 1.1; color: #fff; }
+  .stats span { font-size: 12.5px; color: var(--dim); }
 
-  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
-  .tab { font: inherit; font-size: 14.5px; font-weight: 600; color: var(--dim); background: transparent; border: 1px solid var(--line); padding: 8px 16px; border-radius: 99px; cursor: pointer; transition: all .2s; }
-  .tab:hover { color: var(--fg); }
-  .tab.on { background: var(--fg); color: #111; border-color: var(--fg); }
-  .screen { display: grid; grid-template-columns: 1.3fr .7fr; gap: 34px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 26px; padding: 40px; min-height: 380px; }
-  .screen .shot { display: grid; place-items: center; }
-  .screen .shot img { max-height: 300px; filter: drop-shadow(0 26px 50px rgba(0,0,0,.55)); transition: opacity .3s, transform .4s; }
-  .screen .shot img.out { opacity: 0; transform: translateY(10px) scale(.98); }
-  .screen h3 { font-size: 26px; margin: 0 0 8px; }
-  .screen p { color: var(--dim); margin: 0; }
+  /* ---------- Desktop Fuzzie ---------- */
+  .desk { display: grid; grid-template-columns: 1.08fr .92fr; gap: 44px; align-items: center; }
+  .desk-stage { position: relative; border-radius: 30px; padding: 34px 30px 0; overflow: hidden; border: 1px solid var(--line); min-height: 430px; display: flex; flex-direction: column; justify-content: flex-end;
+    background: radial-gradient(70% 70% at 50% 100%, color-mix(in srgb, var(--accent) 32%, transparent), transparent 70%), radial-gradient(50% 60% at 90% 0%, rgba(138,92,255,.28), transparent 70%), linear-gradient(180deg, #17111d, #0f0b13); }
+  .desk-stage .big-fox { width: min(300px, 70%); margin: 0 auto -38px; position: relative; z-index: 2; }
+  .desk-stage .bar { height: 56px; margin: 0 -30px; background: rgba(12,9,15,.85); border-top: 1px solid rgba(255,255,255,.1); position: relative; z-index: 1; }
+  .keys { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-bottom: 26px; }
+  .key { aspect-ratio: 1; border-radius: 10px; background: linear-gradient(180deg, #2a2230, #1d1722); border: 1px solid rgba(255,255,255,.08); border-bottom-width: 4px; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: var(--dim); cursor: pointer; user-select: none; transition: transform .08s, background .15s, color .15s, border-color .15s; }
+  .key.down { transform: translateY(3px); border-bottom-width: 1px; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 70%, #2a2230), color-mix(in srgb, var(--accent) 40%, #1d1722)); color: #fff; border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+  .counter { position: absolute; top: 22px; right: 24px; text-align: right; font-size: 13px; color: var(--dim); }
+  .counter b { display: block; font-size: 30px; color: var(--fg); line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .poses { display: flex; gap: 10px; margin-top: 26px; }
+  .pose { flex: 1; text-align: center; font-size: 12.5px; color: var(--dim); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 6px 4px 8px; }
+  .pose img { width: 100%; max-width: 92px; margin: 0 auto; }
+  .ticks { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+  .ticks li { display: flex; gap: 14px; color: var(--dim); }
+  .ticks li b { color: var(--fg); display: block; }
+  .ticks li i { flex: none; width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; font-style: normal; font-size: 18px; }
+  .where { margin-top: 22px; font-size: 14px; color: var(--dim); border: 1px dashed var(--line); border-radius: 14px; padding: 10px 14px; }
+  .where b { color: var(--fg); }
 
-  .studio { display: grid; grid-template-columns: .95fr 1.05fr; gap: 34px; align-items: start; }
-  .preview { background: var(--panel); border: 1px solid var(--line); border-radius: 26px; padding: 30px; position: sticky; top: 90px; }
-  .mock { background: linear-gradient(180deg, #000 25%, color-mix(in srgb, var(--pick, var(--accent)) 38%, #000)); border-radius: 0 0 26px 26px; padding: 12px 18px 18px; transition: background .4s; }
-  .mock .row { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; }
-  .mock .row span { display: flex; align-items: center; gap: 8px; color: var(--dim); font-weight: 400; }
-  .mock .row span:last-child { color: var(--fg); font-weight: 600; }
-  .mock .row img { width: 30px; }
-  .mock .body { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
-  .mock .body img { width: 112px; animation: bob 2.6s ease-in-out infinite; }
-  .mock .bar { height: 4px; background: rgba(255,255,255,.18); border-radius: 2px; margin-top: 10px; }
-  .mock .bar i { display: block; height: 100%; width: 42%; background: var(--pick, var(--accent)); border-radius: 2px; transition: background .4s; }
-  .mock .play { margin-top: 12px; display: flex; gap: 18px; font-size: 15px; color: var(--pick, var(--accent)); transition: color .4s; }
-  .preview .label { margin-top: 18px; font-size: 14px; color: var(--dim); }
-  .preview .label b { color: var(--fg); }
-  .swatches { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 26px; }
-  .sw { width: 38px; height: 38px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; transition: transform .15s; outline: none; }
-  .sw:hover { transform: scale(1.1); }
+  /* ---------- studio ---------- */
+  .studio { display: grid; grid-template-columns: .9fr 1.1fr; gap: 34px; align-items: start; }
+  .preview { position: sticky; top: 72px; border-radius: 30px; padding: 26px; border: 1px solid var(--line); overflow: hidden;
+    background: radial-gradient(80% 70% at 50% 60%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 70%), linear-gradient(180deg, var(--panel-2), var(--panel)); transition: background .6s; }
+  .mini-notch { margin: -26px auto 0; width: 76%; background: #000; border-radius: 0 0 22px 22px; padding: 10px 16px 14px; display: flex; align-items: center; gap: 12px; }
+  .mini-notch .fx { width: 46px; flex: none; }
+  .mini-notch .t { flex: 1; min-width: 0; font-size: 13px; }
+  .mini-notch .t div:first-child { font-weight: 600; }
+  .mini-notch .t div:last-child { color: var(--dim); font-size: 12px; }
+  .mini-notch .p { height: 4px; border-radius: 2px; background: rgba(255,255,255,.18); margin-top: 6px; overflow: hidden; }
+  .mini-notch .p i { display: block; height: 100%; width: 46%; background: var(--accent); border-radius: 2px; }
+  .stage-fox { width: min(320px, 82%); margin: 8px auto 0; }
+  .stage-name { text-align: center; font-weight: 700; font-size: 19px; margin-top: -6px; }
+  .stage-name span { display: block; color: var(--dim); font-weight: 400; font-size: 13.5px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sw { width: 30px; height: 30px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; transition: transform .2s var(--spring); outline-offset: 2px; padding: 0; }
+  .sw:hover { transform: scale(1.18); }
   .sw.on { border-color: var(--fg); }
   .sw.custom { background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); position: relative; overflow: hidden; display: block; }
   .sw.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-  .looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
-  .look { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 6px 4px 8px; cursor: pointer; transition: transform .15s, border-color .2s, background .2s; text-align: center; font: inherit; color: var(--dim); font-size: 12px; }
-  .look img { width: 100%; }
-  .look:hover { transform: translateY(-3px); }
-  .look.on { border-color: var(--pick, var(--accent)); background: var(--panel-2); color: var(--fg); }
+  .shuffle { cursor: pointer; font-weight: 700; font-size: 14px; padding: 9px 16px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.06); transition: transform .2s var(--spring), background .2s; }
+  .shuffle:hover { background: rgba(255,255,255,.12); transform: rotate(-2deg) scale(1.04); }
+  .seg { display: inline-flex; padding: 4px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); margin-bottom: 18px; }
+  .seg button { cursor: pointer; border: 0; background: transparent; padding: 8px 16px; border-radius: 10px; font-weight: 700; font-size: 14.5px; color: var(--dim); transition: background .25s, color .25s; }
+  .seg button small { font-weight: 600; opacity: .7; margin-left: 4px; }
+  .seg button.on { background: var(--fg); color: #120d14; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+  .look { cursor: pointer; text-align: center; border-radius: 18px; padding: 4px 4px 9px; border: 1px solid var(--line); background: var(--panel); color: var(--dim); font-size: 12.5px; font-weight: 600; line-height: 1.2; transition: transform .25s var(--spring), border-color .2s, background .25s, color .2s; }
+  .look:hover { transform: translateY(-4px) scale(1.03); color: var(--fg); background: var(--panel-2); border-color: rgba(255,255,255,.16); }
+  .look.on { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+  .look .none { aspect-ratio: 1; display: grid; place-items: center; font-size: 30px; opacity: .45; }
   .counts { display: flex; gap: 28px; margin-top: 26px; }
   .counts b { display: block; font-size: 34px; line-height: 1.1; color: var(--fg); }
   .counts span { color: var(--dim); font-size: 14px; }
 
-  .friends { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; align-items: center; }
-  .code-card { background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 24px; display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
-  .code-card img { width: 72px; }
+  /* A fox drawn from stacked layers (accessory back, skin, accessory front). */
+  .fx { position: relative; aspect-ratio: 1; }
+  .fx i { position: absolute; inset: 0; background: center / 100% 100% no-repeat; }
+  .fx i.sheet { background-size: 1300% 400%; }
+
+  /* ---------- friends ---------- */
+  .friends { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+  .code-card { position: relative; overflow: hidden; border-radius: 24px; padding: 22px; display: flex; align-items: center; gap: 16px; margin-bottom: 22px; border: 1px solid var(--line);
+    background: radial-gradient(90% 120% at 0% 0%, rgba(255,77,141,.22), transparent 60%), linear-gradient(180deg, var(--panel-2), var(--panel)); }
+  .code-card .fx { width: 84px; flex: none; }
   .code-card small { color: var(--dim); display: block; }
-  .code-card .code { font-size: 28px; font-weight: 800; letter-spacing: .02em; }
-  .copy { margin-left: auto; font: inherit; font-weight: 600; font-size: 14px; color: var(--fg); background: rgba(255,255,255,.08); border: 1px solid var(--line); padding: 8px 16px; border-radius: 10px; cursor: pointer; }
-  .copy:hover { background: rgba(255,255,255,.14); }
-  .ticks { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
-  .ticks li { display: flex; gap: 12px; color: var(--dim); }
-  .ticks li b { color: var(--fg); }
-  .ticks li::before { content: ""; flex: none; width: 22px; height: 22px; margin-top: 2px; border-radius: 50%; background: var(--accent-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ff8a3d' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12l4 4 8-8'/%3E%3C/svg%3E") center / 14px no-repeat; }
-  .stack { position: relative; height: 420px; }
-  .stack img { position: absolute; width: 88%; filter: drop-shadow(0 26px 50px rgba(0,0,0,.6)); transition: transform .5s; }
+  .code-card .code { font-size: 30px; font-weight: 800; letter-spacing: .02em; }
+  .copy { cursor: pointer; margin-left: auto; font-weight: 700; font-size: 14px; background: rgba(255,255,255,.08); border: 1px solid var(--line); padding: 9px 16px; border-radius: 11px; transition: background .2s; }
+  .copy:hover { background: rgba(255,255,255,.15); }
+  .stack { position: relative; height: 430px; }
+  .stack img { position: absolute; width: 90%; filter: drop-shadow(0 26px 50px rgba(0,0,0,.6)); transition: transform .6s var(--spring); }
   .stack img:nth-child(1) { top: 0; left: 0; transform: rotate(-3deg); }
-  .stack img:nth-child(2) { top: 170px; right: 0; transform: rotate(2.5deg); }
-  .stack:hover img:nth-child(1) { transform: rotate(-1deg) translateY(-6px); }
-  .stack:hover img:nth-child(2) { transform: rotate(1deg) translateY(6px); }
+  .stack img:nth-child(2) { top: 175px; right: 0; transform: rotate(2.5deg); }
+  .stack:hover img:nth-child(1) { transform: rotate(-1deg) translate(-6px, -8px); }
+  .stack:hover img:nth-child(2) { transform: rotate(1deg) translate(6px, 8px); }
 
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
-  .step { counter-increment: s; background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 26px; }
-  .step::before { content: counter(s); display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); font-weight: 800; font-size: 18px; margin-bottom: 14px; }
-  .step h3 { margin: 0 0 6px; font-size: 19px; }
+  /* ---------- install, faq, end ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: s; }
+  .step { counter-increment: s; border-radius: 24px; padding: 26px; border: 1px solid var(--line); background: linear-gradient(180deg, var(--panel-2), var(--panel)); position: relative; overflow: hidden; }
+  .step::before { content: counter(s); display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; font-weight: 800; font-size: 20px; margin-bottom: 16px; color: #150c10; background: var(--c); }
+  .step:nth-child(1) { --c: var(--accent); } .step:nth-child(2) { --c: var(--pink); } .step:nth-child(3) { --c: var(--teal); }
+  .step h3 { margin: 0 0 6px; font-size: 20px; }
   .step p { margin: 0; color: var(--dim); font-size: 15px; }
-  .step a { color: var(--accent); }
-
-  .faq { display: grid; gap: 10px; max-width: 820px; }
-  details { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 4px 20px; }
-  summary { cursor: pointer; font-weight: 600; padding: 14px 0; list-style: none; display: flex; justify-content: space-between; }
+  .step a { color: color-mix(in srgb, var(--accent) 85%, #fff); }
+  .faq { display: grid; gap: 10px; max-width: 840px; }
+  details { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 4px 22px; transition: border-color .2s; }
+  details[open] { border-color: rgba(255,255,255,.16); }
+  summary { cursor: pointer; font-weight: 700; padding: 15px 0; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
   summary::-webkit-details-marker { display: none; }
-  summary::after { content: "+"; color: var(--accent); font-size: 20px; line-height: 1; transition: transform .2s; }
+  summary::after { content: "+"; color: var(--accent); font-size: 22px; line-height: 1; transition: transform .25s var(--spring); }
   details[open] summary::after { transform: rotate(45deg); }
   details p { color: var(--dim); margin: 0 0 16px; }
-
-  .final { text-align: center; padding: 120px 0 40px; }
-  .final img { width: 120px; margin: 0 auto 10px; animation: bob 3s ease-in-out infinite; }
-  .final .btns { justify-content: center; }
-  footer { color: var(--dim); font-size: 14px; text-align: center; padding: 50px 0 40px; border-top: 1px solid var(--line); margin-top: 80px; }
+  .final { text-align: center; padding: 130px 0 30px; position: relative; }
+  .final .fx { width: 200px; margin: 0 auto -6px; }
+  .final .sub { margin: 0 auto 28px; }
+  footer { color: var(--dim); font-size: 14px; text-align: center; padding: 44px 0 40px; border-top: 1px solid var(--line); margin-top: 90px; }
   footer a { color: var(--dim); }
 
-  .js .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s ease; }
-  .js .reveal.seen { opacity: 1; transform: none; }
+  /* The desk fox that keeps you company once the screen above scrolls away. */
+  .buddy { position: fixed; right: 26px; bottom: -6px; width: 104px; z-index: 55; transform: translateY(120%); transition: transform .6s var(--spring); }
+  .buddy.show { transform: none; }
+  .buddy button { position: absolute; top: 8px; right: 0; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 13px; line-height: 22px; cursor: pointer; opacity: 0; transition: opacity .2s; padding: 0; }
+  .buddy:hover button { opacity: 1; }
+  .buddy .say { position: absolute; bottom: 92px; right: 40px; white-space: nowrap; font-size: 12.5px; font-weight: 600; background: #fff; color: #1a1016; padding: 6px 11px; border-radius: 12px 12px 2px 12px; opacity: 0; transform: translateY(6px); transition: opacity .3s, transform .3s; pointer-events: none; }
+  .buddy.talk .say { opacity: 1; transform: none; }
 
-  @media (max-width: 900px) {
-    .hero, .studio, .friends, .screen { grid-template-columns: 1fr; }
-    .cards, .steps { grid-template-columns: 1fr 1fr; }
+  .js .reveal { opacity: 0; transform: translateY(28px); transition: opacity .8s ease, transform .8s var(--spring); }
+  .js .reveal.seen { opacity: 1; transform: none; }
+  section, .final { content-visibility: auto; contain-intrinsic-size: auto 800px; }
+
+  @media (max-width: 960px) {
+    .desk, .studio, .friends { grid-template-columns: 1fr; }
     .preview { position: static; }
+    .bento .card, .bento .card.wide { grid-column: span 3; }
     nav a:not(.gh) { display: none; }
-    .notch-zone { display: none; }
-    .stage { height: 340px; } .stage .fox { width: 280px; }
+    .notch-zone, .buddy { display: none; }
+    .stack { height: 360px; }
   }
-  @media (max-width: 600px) { .cards, .steps { grid-template-columns: 1fr; } .screen { padding: 22px; } }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .js .reveal { opacity: 1; transform: none; } }
+  @media (max-width: 640px) {
+    .bento .card, .bento .card.wide { grid-column: span 6; }
+    .steps { grid-template-columns: 1fr; }
+    .scene { transform: none; border-radius: 14px; }
+    .tb-clock { display: none; }
+    .stack { height: 260px; } .stack img:nth-child(2) { top: 110px; }
+    .keys { gap: 4px; } .key { font-size: 12px; border-radius: 8px; }
+    .code-card .code { font-size: 22px; }
+    section { padding-top: 90px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .js .reveal { opacity: 1; transform: none; }
+    .scene { transform: none; }
+  }
 </style>
 </head>
 <body>
 <script>document.documentElement.classList.add("js");</script>
-<div class="blobs"><i></i><i></i></div>
+<div class="glow" aria-hidden="true"><i></i><i></i></div>
 
 <!-- A small notch that opens when hovered, like the app. -->
 <div class="notch-zone" aria-hidden="true">
-  <div class="notch">
-    <div class="n-bar"><img src="img/icon.png" alt=""><span id="clock">12:00</span><span class="eq"><b></b><b></b><b></b></span></div>
+  <div class="notch" id="notch">
+    <div class="n-bar"><img src="img/icon.png" alt=""><span id="clock">12:00</span><span class="eq"><b></b><b></b><b></b><b></b></span></div>
+    <div class="n-ping"><img src="img/fox/skin_31_0.webp" alt=""><div>Mira poked you<small>Say hi back from Friends</small></div></div>
     <div class="n-body">
       <div class="cover"></div>
       <div class="n-info">
@@ -249,6 +373,7 @@
     <a class="brand" href="#"><img src="img/icon.png" alt="">Fuzzie</a>
     <nav>
       <a href="#inside">Features</a>
+      <a href="#desktop">Desktop Fuzzie</a>
       <a href="#looks">Looks</a>
       <a href="#friends">Friends</a>
       <a href="#install">Install</a>
@@ -257,97 +382,137 @@
   </header>
 
   <div class="hero">
-    <div>
-      <span class="badge">&#9733; Free &amp; open source for Windows</span>
-      <h1>Meet <span>Fuzzie.</span></h1>
-      <p class="lead">A little notch at the top of your screen. It shows what you're playing with synced lyrics, keeps your files and clipboard handy, brings your friends along, and has a fox that's always happy to see you.</p>
-      <div class="btns">
-        <a class="btn primary" href="https://github.com/ismailsenn/fuzzie-notch/releases/latest/download/Fuzzie.exe">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
-          Download for Windows
-        </a>
-        <a class="btn ghost" href="https://github.com/ismailsenn/fuzzie-notch">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.27 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
-          Source code
-        </a>
-      </div>
-      <div class="meta"><span id="ver">Latest version</span> · Windows 10 &amp; 11 · no installer, no account</div>
+    <span class="badge"><b></b>Free &amp; open source for Windows 10 &amp; 11</span>
+    <h1 class="serif">A <span class="grad">notch</span> up top.<br>A <span class="grad">fox</span> down below.</h1>
+    <p class="lead">Fuzzie turns the top of your screen into a little notch for music, synced lyrics, files and friends, and puts a fox on your taskbar that taps along as you type.</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/ismailsenn/fuzzie-notch/releases/latest/download/Fuzzie.exe">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+        Download for Windows
+      </a>
+      <a class="btn ghost" href="https://github.com/ismailsenn/fuzzie-notch">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.27 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+        Source code
+      </a>
     </div>
-    <div class="stage">
-      <img class="fox" id="heroFox" src="img/foxes/fox_0_0.png" alt="Fuzzie the fox" title="Click for another look">
-      <span class="name" id="heroName">Ember</span>
-    </div>
-  </div>
+    <div class="meta"><span id="ver">Latest version</span> · one small file · no installer, no account</div>
 
+    <div class="scene-wrap">
+      <div class="scene" id="scene">
+        <div class="wall"></div>
+        <div class="win a"><i style="top:4cqw;width:60%"></i><i style="top:6.4cqw;width:80%"></i><i style="top:8.8cqw;width:45%"></i></div>
+        <div class="win b"><i style="top:4cqw;width:70%"></i><i style="top:6.4cqw;width:50%"></i></div>
+        <div class="scene-notch"><img id="shot" src="img/music.png" alt="The notch playing music with synced lyrics"></div>
+        <div class="type-hint"><kbd>Type</kbd> or <kbd>click</kbd> anywhere, the fox taps along</div>
+        <div class="presses" id="presses"></div>
+        <img class="tb-fox deskfox" src="img/desk/rest.webp" alt="Desktop Fuzzie sitting on the taskbar">
+        <div class="taskbar"><u></u><u></u><u></u><u></u><u></u><u></u><div class="tb-clock"><span id="tbClock">12:00</span><br><span id="tbDate"></span></div></div>
+      </div>
+    </div>
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <p class="tab-text" id="tabText"></p>
+  </div>
+</div>
+
+<div class="strip-clip" aria-hidden="true"><div class="strip"><div class="strip-row" id="strip"></div></div></div>
+
+<div class="wrap">
   <section id="inside" class="reveal">
     <div class="kicker">What's inside</div>
-    <h2>Small, but it does a lot.</h2>
-    <p class="sub">Hover the notch to open it. Move away and it tucks itself back in.</p>
-    <div class="cards">
-      <div class="card">
+    <h2 class="serif">Small, but it <span class="grad">does a lot.</span></h2>
+    <p class="sub">Hover the notch to open it. Move away and it tucks itself back in. Everything is one glance away and nothing is in your way.</p>
+    <div class="bento">
+      <div class="card wide" style="--c: var(--accent)">
+        <span class="ico">&#9835;</span>
         <div class="demo"><div class="lyr" id="lyr"><div>Should auld acquaintance be forgot,</div><div class="on">and never brought to mind?</div><div>Should auld acquaintance be forgot,</div><div>and auld lang syne?</div></div></div>
-        <h3>Lyrics</h3><p>Synced lyrics slide in line by line. Click a line to jump there.</p>
+        <h3>Synced lyrics</h3><p>Lines light up as they're sung and slide in one by one. Click a line to jump there.</p>
       </div>
-      <div class="card">
-        <div class="demo"><img class="mini" src="img/foxes/fox_9_17.png" alt=""><span class="note" style="left:28%;bottom:20%">&#9834;</span><span class="note" style="right:28%;bottom:30%;animation-delay:-1.2s">&#9835;</span></div>
-        <h3>The fox</h3><p>Bops along to your music, taps a paw when you type and naps when you're away.</p>
+      <div class="card wide" style="--c: #1ed760">
+        <span class="ico">&#9654;</span>
+        <div class="demo"><div class="players"><span style="background:#1ed760">Sp</span><span style="background:#ff4d4d">Yt</span><span style="background:#3d9bff">Br</span><span style="background:#8a5cff">Any</span></div><div class="bars"><b></b><b style="animation-delay:-.2s"></b><b style="animation-delay:-.5s"></b><b style="animation-delay:-.7s"></b><b style="animation-delay:-.35s"></b><b style="animation-delay:-.9s"></b></div></div>
+        <h3>Music from any player</h3><p>Spotify, your browser or any media app: cover, controls and a seek bar, without switching windows.</p>
       </div>
-      <div class="card">
+      <div class="card" style="--c: var(--sun)">
+        <span class="ico">&#9638;</span>
         <div class="demo"><div class="files"><div class="file"><div><b>&#128196;</b>notes.pdf</div></div><div class="file"><div><b>&#127912;</b>photo.png</div></div><div class="file"><div><b>&#128230;</b>game.zip</div></div></div></div>
         <h3>Shelf</h3><p>Drop files on the notch, drag them out later. They stay until you clear them.</p>
       </div>
-      <div class="card">
-        <div class="demo"><div class="clips"><div class="clip">https://github.com/ismailsenn/fuzzie-notch</div><div class="clip">Meeting moved to 3 pm</div><div class="clip">&#128247; Screenshot 2026-11-23.png</div></div></div>
-        <h3>Clipboard</h3><p>Everything you copied, text and images, one click away.</p>
+      <div class="card" style="--c: var(--teal)">
+        <span class="ico">&#10697;</span>
+        <div class="demo"><div class="clips"><div class="clip">github.com/ismailsenn/fuzzie-notch</div><div class="clip">Meeting moved to 3 pm</div><div class="clip">&#128247; Screenshot 2026-11-23.png</div></div></div>
+        <h3>Clipboard</h3><p>Everything you copied, text and pictures, one click away.</p>
       </div>
-      <div class="card">
-        <div class="demo"><div class="pair"><img src="img/foxes/fox_4_4.png" alt=""><span class="heart">&#10084;</span><img src="img/foxes/fox_3_9.png" alt=""></div></div>
-        <h3>Friends</h3><p>See what friends are playing, poke them, or listen along.</p>
+      <div class="card" style="--c: var(--sky)">
+        <span class="ico">&#128276;</span>
+        <div class="demo"><div class="hud">&#128266;<i><b></b></i>Volume</div></div>
+        <h3>Notifications &amp; HUD</h3><p>Messages, volume, Caps Lock and audio device changes show up right in the notch.</p>
       </div>
-      <div class="card">
-        <div class="demo"><div class="meter"><div><span>CPU</span><span>~0%</span></div><i><b></b></i><div><span>Memory</span><span>a few MB</span></div><i><b style="width:8%;animation:none"></b></i></div></div>
-        <h3>Light</h3><p>Written in Rust and Direct2D. You won't notice it running.</p>
+      <div class="card wide" style="--c: var(--pink)">
+        <span class="ico">&#10084;</span>
+        <div class="demo"><div class="pair"><div class="fx" data-fox="4,4"></div><span class="heart">&#10084;</span><div class="fx" data-fox="9,17" style="transform:scaleX(-1)"></div></div></div>
+        <h3>Friends</h3><p>See what your friends are playing, poke them, or listen along. No account needed.</p>
+      </div>
+      <div class="card wide" style="--c: var(--violet)">
+        <span class="ico">&#9889;</span>
+        <div class="demo"><div class="stats"><div><b id="sizeStat">~1.5 MB</b><span>download</span></div><div><b>~0%</b><span>CPU when idle</span></div><div><b>0</b><span>frames drawn when idle</span></div></div></div>
+        <h3>Featherweight</h3><p>Written in Rust and drawn with Direct2D. It only draws when something moves, so you won't notice it running.</p>
       </div>
     </div>
   </section>
 
-  <section class="reveal">
-    <div class="kicker">Have a look</div>
-    <h2>Every page of the notch.</h2>
-    <p class="sub">These are real screenshots. The song names are just examples.</p>
-    <div class="tabs" id="tabs"></div>
-    <div class="screen">
-      <div class="shot"><img id="shot" src="img/music.png" alt=""></div>
-      <div><h3 id="shotTitle"></h3><p id="shotText"></p></div>
+  <section id="desktop" class="reveal">
+    <div class="kicker">Desktop Fuzzie</div>
+    <h2 class="serif">Your fox, <span class="grad">on your taskbar.</span></h2>
+    <p class="sub">Not just in the notch: Fuzzie can sit right on your taskbar and tap a paw on every key you press and every click, one paw and then the other. Try it, press any key.</p>
+    <div class="desk">
+      <div>
+        <div class="desk-stage" id="deskStage">
+          <div class="counter"><b id="count">0</b>presses today</div>
+          <div class="keys" id="keys"></div>
+          <img class="big-fox deskfox" src="img/desk/rest.webp" alt="Desktop Fuzzie">
+          <div class="bar"></div>
+        </div>
+        <div class="poses">
+          <div class="pose"><img loading="lazy" src="img/desk/rest.webp" alt="">Waiting</div>
+          <div class="pose"><img loading="lazy" src="img/desk/left.webp" alt="">Left tap</div>
+          <div class="pose"><img loading="lazy" src="img/desk/right.webp" alt="">Right tap</div>
+          <div class="pose"><img loading="lazy" src="img/desk/blink.webp" alt="">Blink</div>
+          <div class="pose"><img loading="lazy" src="img/desk/sleep.webp" alt="">Nap</div>
+        </div>
+      </div>
+      <div>
+        <ul class="ticks">
+          <li><i style="background:rgba(255,138,61,.16);color:#ff8a3d">&#9000;</i><span><b>Taps along</b>Every key press and click, left paw, right paw. Turn either off if you like.</span></li>
+          <li><i style="background:rgba(61,155,255,.16);color:#3d9bff">&#8596;</i><span><b>Sits where you want</b>On the taskbar it slides sideways; take it off and drag it anywhere on your screen.</span></li>
+          <li><i style="background:rgba(138,92,255,.18);color:#a98bff">z</i><span><b>Naps when you're away</b>Eyes closed, a little "zZZ", and it's back the moment you are.</span></li>
+          <li><i style="background:rgba(255,77,141,.16);color:#ff4d8d">&#10022;</i><span><b>Wears your look</b>Same skin and accessory as the fox in your notch, at any size, glow optional.</span></li>
+          <li><i style="background:rgba(46,230,197,.15);color:#2ee6c5">&#9673;</i><span><b>Costs nothing</b>It holds still between taps, so while you're idle it's just a picture.</span></li>
+        </ul>
+        <div class="where">Turn it on in <b>Settings &rarr; Desktop Fuzzie &rarr; Fox on the desktop</b>.</div>
+      </div>
     </div>
   </section>
 
   <section id="looks" class="reveal">
-    <div class="kicker">Your colours, your fox</div>
-    <h2>Make it yours.</h2>
-    <p class="sub">Pick any colour for the notch and dress your fox up. Try it here.</p>
+    <div class="kicker">Make it yours</div>
+    <h2 class="serif">Dress up <span class="grad">your fox.</span></h2>
+    <p class="sub">Hover any fox to see it come alive, then mix any look with any accessory. Pick a colour and the whole page follows along.</p>
     <div class="studio">
       <div class="preview">
-        <div class="mock">
-          <div class="row"><span><img id="mockHead" src="img/foxes/fox_0_0.png" alt="">Monday, November 23</span><span id="mockClock">12:00</span></div>
-          <div class="body">
-            <img id="mockFox" src="img/foxes/fox_0_0.png" alt="">
-            <div style="flex:1">
-              <div style="font-weight:600">Blinding Lights</div>
-              <div style="color:var(--dim);font-size:14px">The Weeknd</div>
-              <div class="bar"><i></i></div>
-              <div class="play">&#9198; &#9208; &#9197;</div>
-            </div>
-          </div>
+        <div class="mini-notch"><div class="fx" id="headFox"></div><div class="t"><div>Blinding Lights</div><div>The Weeknd</div><div class="p"><i></i></div></div><span class="eq"><b></b><b></b><b></b></span></div>
+        <div class="fx stage-fox" id="stageFox"></div>
+        <div class="stage-name" id="stageName">Ember<span>no accessory</span></div>
+        <div class="row">
+          <div class="swatches" id="swatches"></div>
+          <button class="shuffle" id="shuffle">&#127922; Surprise me</button>
         </div>
-        <div class="label">Wearing: <b id="lookName">Ember</b></div>
       </div>
       <div>
-        <div class="swatches" id="swatches"></div>
-        <div class="looks" id="looksGrid"></div>
+        <div class="seg" role="tablist"><button class="on" id="segSkins">Looks<small>49</small></button><button id="segAccs">Accessories<small>26</small></button></div>
+        <div class="grid" id="grid"></div>
         <div class="counts">
-          <div><b>59</b><span>fox looks</span></div>
-          <div><b>38</b><span>accessories</span></div>
+          <div><b>49</b><span>looks to try here</span></div>
+          <div><b>26</b><span>accessories</span></div>
           <div><b>&infin;</b><span>colours</span></div>
         </div>
       </div>
@@ -356,47 +521,48 @@
 
   <section id="friends" class="reveal">
     <div class="kicker">Friends</div>
-    <h2>Better with friends.</h2>
+    <h2 class="serif">Better <span class="grad">with friends.</span></h2>
     <p class="sub">No email, no password. Just swap a code and your foxes can meet.</p>
     <div class="friends">
       <div>
         <div class="code-card">
-          <img src="img/foxes/fox_11_5.png" alt="">
+          <div class="fx" data-fox="11,5"></div>
           <div><small>Your code looks like</small><div class="code">FUZ-A4G7B9</div></div>
           <button class="copy" id="copyBtn">Copy</button>
         </div>
         <ul class="ticks">
-          <li><span><b>Add from the notch.</b> Open Friends, tap Add, paste their code and send.</span></li>
-          <li><span><b>See who's around.</b> Who's online and what they're listening to, right now.</span></li>
-          <li><span><b>Poke them.</b> Their fox pops up in their notch to say hi.</span></li>
-          <li><span><b>Listen along.</b> Play the same song at the same moment.</span></li>
-          <li><span><b>You're in control.</b> Hide your music or go offline any time.</span></li>
+          <li><i style="background:rgba(255,138,61,.16);color:#ff8a3d">+</i><span><b>Add from the notch</b>Open Friends, tap Add, paste their code and send.</span></li>
+          <li><i style="background:rgba(46,230,197,.15);color:#2ee6c5">&#9679;</i><span><b>See who's around</b>Who's online and what they're listening to, right now.</span></li>
+          <li><i style="background:rgba(255,77,141,.16);color:#ff4d8d">&#9995;</i><span><b>Poke them</b>Your fox pops up in their notch to say hi.</span></li>
+          <li><i style="background:rgba(138,92,255,.18);color:#a98bff">&#9835;</i><span><b>Listen along</b>Play the same song at the same moment.</span></li>
+          <li><i style="background:rgba(255,210,63,.15);color:#ffd23f">&#9881;</i><span><b>You're in control</b>Hide your music or go offline any time.</span></li>
         </ul>
       </div>
       <div class="stack">
-        <img src="img/friends.png" alt="Friends list in the notch">
-        <img src="img/friends_add.png" alt="Adding a friend in the notch">
+        <img loading="lazy" src="img/friends.png" alt="Friends list in the notch">
+        <img loading="lazy" src="img/friends_add.png" alt="Adding a friend in the notch">
       </div>
     </div>
   </section>
 
   <section id="install" class="reveal">
     <div class="kicker">Install</div>
-    <h2>Three steps.</h2>
-    <p class="sub">No installer: Fuzzie is one small file.</p>
+    <h2 class="serif">Three steps. <span class="grad">That's it.</span></h2>
+    <p class="sub">No installer: Fuzzie is one small file that keeps itself up to date.</p>
     <div class="steps">
       <div class="step"><h3>Get it</h3><p>Download <a href="https://github.com/ismailsenn/fuzzie-notch/releases/latest/download/Fuzzie.exe">Fuzzie.exe</a> and put it anywhere you like.</p></div>
       <div class="step"><h3>Run it</h3><p>Windows may warn you because the app is new: click <b>More info</b>, then <b>Run anyway</b>.</p></div>
-      <div class="step"><h3>Say hi</h3><p>Fuzzie appears at the top of your screen, starts with Windows and keeps itself up to date.</p></div>
+      <div class="step"><h3>Say hi</h3><p>Fuzzie appears at the top of your screen, starts with Windows and updates itself.</p></div>
     </div>
   </section>
 
   <section class="reveal">
     <div class="kicker">Questions</div>
-    <h2>Good to know.</h2>
+    <h2 class="serif">Good to know.</h2>
     <div class="faq">
       <details><summary>Is it free?</summary><p>Yes, and the code is open on GitHub.</p></details>
-      <details><summary>Does it slow my PC down?</summary><p>No. It's written in Rust, uses a few MB of memory and almost no CPU while idle.</p></details>
+      <details><summary>Does it slow my PC down?</summary><p>No. It's written in Rust, uses a few MB of memory and almost no CPU while idle. The notch and the desktop fox only draw when something moves.</p></details>
+      <details><summary>What is Desktop Fuzzie?</summary><p>An optional fox that sits on your taskbar (or anywhere you drag it) and taps along as you type and click. Turn it on in Settings &rarr; Desktop Fuzzie.</p></details>
       <details><summary>What do my friends see?</summary><p>Your name, your fox, whether you're online and the song you're playing. You can stop sharing your music, or go offline, in Settings.</p></details>
       <details><summary>Do I need an account?</summary><p>No. Fuzzie makes a friend code for you on first start. There's no email or password.</p></details>
       <details><summary>Why does Windows warn me?</summary><p>The exe isn't signed yet, so SmartScreen doesn't know it. Click More info, then Run anyway. You can read every line of the source on GitHub.</p></details>
@@ -405,9 +571,9 @@
   </section>
 
   <div class="final reveal">
-    <img src="img/icon.png" alt="">
-    <h2>Ready when you are.</h2>
-    <p class="sub" style="margin:0 auto 26px">Free, tiny and fox-shaped.</p>
+    <div class="fx" id="finalFox"></div>
+    <h2 class="serif">Ready when <span class="grad">you are.</span></h2>
+    <p class="sub">Free, tiny and fox-shaped.</p>
     <div class="btns"><a class="btn primary" href="https://github.com/ismailsenn/fuzzie-notch/releases/latest/download/Fuzzie.exe">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
       Download for Windows</a></div>
@@ -419,83 +585,295 @@
   </footer>
 </div>
 
+<div class="buddy" id="buddy" aria-hidden="true">
+  <span class="say">I tap when you type!</span>
+  <img class="deskfox" src="img/desk/rest.webp" alt="">
+  <button id="buddyClose" title="Hide">&times;</button>
+</div>
+
 <script>
   const $ = (id) => document.getElementById(id);
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
 
-  // Latest version and size next to the download button.
+  // ---------- latest release ----------
   fetch("https://api.github.com/repos/ismailsenn/fuzzie-notch/releases/latest")
     .then((r) => (r.ok ? r.json() : null))
     .then((rel) => {
       if (!rel) return;
       const exe = (rel.assets || []).find((a) => a.name === "Fuzzie.exe");
-      $("ver").textContent = rel.tag_name + (exe ? " · " + (exe.size / 1048576).toFixed(1) + " MB" : "");
+      const mb = exe ? (exe.size / 1048576).toFixed(1) + " MB" : "";
+      $("ver").textContent = rel.tag_name + (mb ? " · " + mb : "");
+      if (mb) $("sizeStat").textContent = mb;
     })
     .catch(() => {});
 
-  // Clocks.
+  // ---------- clocks ----------
   const tick = () => {
-    const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const d = new Date();
+    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     $("clock").textContent = t;
-    $("mockClock").textContent = t;
+    $("tbClock").textContent = t;
+    $("tbDate").textContent = d.toLocaleDateString();
   };
   tick();
   setInterval(tick, 10000);
 
-  // Lyrics (public domain, Robert Burns, 1788).
+  // ---------- lyrics (public domain, Robert Burns, 1788) ----------
   const lines = ["Should auld acquaintance be forgot,", "and never brought to mind?", "Should auld acquaintance be forgot,", "and auld lang syne?", "For auld lang syne, my dear,", "for auld lang syne,", "we'll take a cup o' kindness yet,", "for auld lang syne."];
   let li = 1;
   setInterval(() => {
+    if (document.hidden) return;
     li = (li + 1) % lines.length;
     $("nlyric").innerHTML = "<span>" + lines[li] + "</span>";
-    $("lyr").innerHTML = [-1, 0, 1, 2].map((k) => {
-      const t = lines[(li + k + lines.length) % lines.length];
-      return '<div class="' + (k === 0 ? "on" : "") + '">' + t + "</div>";
-    }).join("");
+    $("lyr").innerHTML = [-1, 0, 1, 2].map((k) => '<div class="' + (k === 0 ? "on" : "") + '">' + lines[(li + k + lines.length) % lines.length] + "</div>").join("");
   }, 2600);
 
-  // Looks: [skin, accessory, name].
-  const looks = [
-    [0, 0, "Ember"], [1, 22, "Snowdrift + Flower Crown"], [3, 9, "Midnight + Planet Ring"], [4, 4, "Cherry + Flower"],
-    [5, 24, "Moss + Sprout"], [6, 7, "Honey + Royal Crown"], [8, 13, "Lilac + Angel Wings"], [9, 17, "Lagoon + Headphones"],
-    [10, 25, "Cocoa + Beanie"], [11, 5, "Peach + Heart Boppers"], [14, 8, "Nebula + Astronaut"], [16, 16, "Dusk + Scarf"],
-    [19, 6, "Copper + Top Hat"], [21, 19, "Tiger + Sunglasses"], [25, 15, "Panda + Bow"], [27, 18, "Aurora + Halo"],
-    [29, 21, "Supernova + Witch Hat"], [31, 20, "Cotton Candy + Party Hat"], [36, 11, "Kitsune + Fox Mask"], [38, 3, "Rainbow + Star Clip"],
-    [45, 14, "Neon + Glasses"], [23, 26, "Dalmatian + Knight Helmet"],
-  ];
-  const src = (l) => "img/foxes/fox_" + l[0] + "_" + l[1] + ".png";
-  looks.forEach((l) => { const i = new Image(); i.src = src(l); });
+  // The top notch says hi now and then, like a friend's poke.
+  setInterval(() => {
+    if (document.hidden || calm) return;
+    $("notch").classList.add("ping");
+    setTimeout(() => $("notch").classList.remove("ping"), 2600);
+  }, 15000);
 
-  // Hero fox: a new look every few seconds, or on click.
-  let hi = 0;
-  const heroNext = () => {
-    hi = (hi + 1) % looks.length;
-    const f = $("heroFox");
-    f.src = src(looks[hi]);
-    $("heroName").textContent = looks[hi][2];
-    f.classList.remove("pop"); void f.offsetWidth; f.classList.add("pop");
+  // ---------- animated foxes ----------
+  // Every look is drawn by the app itself into sprite sheets: 52 frames on a
+  // 13 x 4 grid, one 4.3 s loop. Accessories come in separate back and front
+  // layers so they fit on any skin. Sheets load only when a fox starts moving.
+  const SKINS = ["Ember", "Snowdrift", "Graphite", "Midnight", "Cherry", "Moss", "Honey", "Shadow", "Lilac", "Lagoon", "Cocoa", "Peach", "Lime", "Coral", "Nebula", "Storm", "Dusk", "Glacier", "Rosewood", "Copper", "Pumpkin", "Tiger", "Snow Leopard", "Dalmatian", "Calico", "Panda", "Bandit", "Aurora", "Galaxy", "Supernova", "Starlight", "Cotton Candy", "Mint Choco", "Lemonade", "Phoenix", "Sakura", "Kitsune", "Ghost", "Rainbow", "Golden", "Ocean", "Forest", "Lava", "Frost", "Bubblegum", "Neon", "Melon", "Blueberry", "Strawberry"];
+  const ACCS = ["None", "Headband", "Ninja Band", "Star Clip", "Flower", "Heart Boppers", "Top Hat", "Royal Crown", "Astronaut", "Planet Ring", "Forest Antlers", "Fox Mask", "Peacock Crest", "Angel Wings", "Glasses", "Bow", "Scarf", "Headphones", "Halo", "Sunglasses", "Party Hat", "Witch Hat", "Flower Crown", "Devil Horns", "Sprout", "Beanie", "Knight Helmet"];
+  const BACK = new Set([9, 13]);
+  const FRONT = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]);
+  const FRAMES = 52, COLS = 13, ROWS = 4, LOOP_MS = 4300;
+  const layersOf = (skin, acc) => [...(BACK.has(acc) ? ["accb_" + acc] : []), "skin_" + skin, ...(FRONT.has(acc) ? ["accf_" + acc] : [])];
+  const sheets = new Map();
+  const sheet = (n) => {
+    if (!sheets.has(n)) sheets.set(n, new Promise((ok) => { const i = new Image(); i.onload = () => ok(true); i.onerror = () => ok(false); i.src = "img/fox/" + n + ".webp"; }));
+    return sheets.get(n);
   };
-  let heroTimer = setInterval(heroNext, 2800);
-  $("heroFox").addEventListener("click", () => { clearInterval(heroTimer); heroNext(); heroTimer = setInterval(heroNext, 2800); });
 
-  // Floating notes and hearts around the hero fox.
-  const stage = document.querySelector(".stage");
-  ["&#9834;", "&#10084;", "&#9835;", "&#10022;", "&#9834;", "&#10084;"].forEach((s, i) => {
-    const e = document.createElement("span");
-    e.className = "float";
-    e.innerHTML = s;
-    e.style.left = 12 + ((i * 16) % 76) + "%";
-    e.style.bottom = 18 + ((i * 7) % 30) + "%";
-    e.style.animationDelay = -i * 1.1 + "s";
-    if (s === "&#10084;") e.style.color = "#ff6b9a";
-    stage.appendChild(e);
+  const playing = new Set();
+  let raf = 0;
+  const t0 = performance.now();
+  const step = (now) => {
+    raf = 0;
+    if (!playing.size) return;
+    const f = Math.floor((now - t0) / (LOOP_MS / FRAMES)) % FRAMES;
+    const pos = ((f % COLS) * 100) / (COLS - 1) + "% " + (Math.floor(f / COLS) * 100) / (ROWS - 1) + "%";
+    playing.forEach((fox) => {
+      if (fox.ready && fox.frame !== f) {
+        fox.frame = f;
+        for (const i of fox.el.children) i.style.backgroundPosition = pos;
+      }
+    });
+    raf = requestAnimationFrame(step);
+  };
+  const kick = () => { if (!raf) raf = requestAnimationFrame(step); };
+
+  class Fox {
+    constructor(el) { this.el = el; this.names = []; this.live = false; this.ready = false; this.token = 0; this.frame = -1; }
+    set(skin, acc) {
+      this.skin = skin; this.acc = acc;
+      const names = layersOf(skin, acc);
+      const token = ++this.token;
+      this.names = names;
+      this.ready = false;
+      this.el.replaceChildren(...names.map((n) => { const i = document.createElement("i"); i.style.backgroundImage = "url(img/fox/" + n + "_0.webp)"; return i; }));
+      if (this.live) this.prepare(token);
+      return this;
+    }
+    prepare(token) {
+      Promise.all(this.names.map(sheet)).then((ok) => {
+        if (token !== this.token || !this.live || ok.includes(false)) return;
+        [...this.el.children].forEach((i, k) => { i.style.backgroundImage = "url(img/fox/" + this.names[k] + ".webp)"; i.classList.add("sheet"); });
+        this.frame = -1;
+        this.ready = true;
+      });
+    }
+    play() {
+      if ((calm && !this.always) || this.live) return;
+      this.live = true;
+      playing.add(this);
+      this.prepare(this.token);
+      kick();
+    }
+    stop() {
+      this.live = false;
+      playing.delete(this);
+      if (this.ready) for (const i of this.el.children) i.style.backgroundPosition = "0% 0%";
+    }
+  }
+
+  // Plays a fox while it is on screen.
+  const onScreen = new IntersectionObserver((es) => es.forEach((e) => { const f = e.target._fox; if (f) e.isIntersecting ? f.play() : f.stop(); }), { rootMargin: "80px" });
+  const autoplay = (fox) => { fox.el._fox = fox; onScreen.observe(fox.el); return fox; };
+
+  // Small foxes in cards play on hover.
+  document.querySelectorAll("[data-fox]").forEach((el) => {
+    const [s, a] = el.dataset.fox.split(",").map(Number);
+    const fox = new Fox(el).set(s, a);
+    const card = el.closest(".card, .code-card") || el;
+    card.addEventListener("pointerenter", () => fox.play());
+    card.addEventListener("pointerleave", () => fox.stop());
   });
 
-  // Studio: colour swatches and the look grid.
-  const colours = ["#FF8A3D", "#C902F0", "#3D8BFF", "#1ED7A5", "#FF4D6D", "#FFD23F", "#8A6BFF", "#9AA1AA"];
-  const preview = document.querySelector(".preview");
+  // ---------- the desktop fox ----------
+  const desk = { paw: 0, timer: 0, blinkT: 0, last: Date.now(), asleep: false, count: 0 };
+  ["left", "right", "blink", "sleep"].forEach((p) => { const i = new Image(); i.src = "img/desk/" + p + ".webp"; });
+  const pose = (p) => document.querySelectorAll(".deskfox").forEach((i) => { const s = "img/desk/" + p + ".webp"; if (!i.src.endsWith(s)) i.src = s; });
+  const tap = () => {
+    desk.last = Date.now();
+    desk.asleep = false;
+    desk.paw ^= 1;
+    pose(desk.paw ? "left" : "right");
+    clearTimeout(desk.timer);
+    desk.timer = setTimeout(() => pose("rest"), 110);
+    desk.count++;
+    $("count").textContent = desk.count.toLocaleString();
+    $("presses").textContent = desk.count.toLocaleString() + (desk.count === 1 ? " tap" : " taps");
+    $("scene").classList.add("typed");
+  };
+  const keyEls = new Map();
+  "QWERTYUIOP".split("").forEach((k) => {
+    const b = document.createElement("div");
+    b.className = "key";
+    b.textContent = k;
+    b.addEventListener("pointerdown", (e) => { e.stopPropagation(); press(k); tap(); });
+    keyEls.set(k, b);
+    $("keys").appendChild(b);
+  });
+  const press = (k) => {
+    const b = keyEls.get(k) || [...keyEls.values()][Math.floor(Math.random() * keyEls.size)];
+    b.classList.add("down");
+    setTimeout(() => b.classList.remove("down"), 120);
+  };
+  addEventListener("keydown", (e) => { if (e.repeat) return; tap(); if (e.key && e.key.length === 1) press(e.key.toUpperCase()); });
+  addEventListener("pointerdown", (e) => { if (e.button === 0) tap(); });
+  // Blink now and then, nap when nobody is around.
+  setInterval(() => {
+    if (document.hidden) return;
+    const idle = Date.now() - desk.last;
+    if (idle > 25000) { if (!desk.asleep) { desk.asleep = true; pose("sleep"); } return; }
+    if (Date.now() > desk.blinkT && idle > 400) {
+      desk.blinkT = Date.now() + 2600 + Math.random() * 3200;
+      pose("blink");
+      setTimeout(() => { if (!desk.asleep && Date.now() - desk.last > 150) pose("rest"); }, 140);
+    }
+  }, 500);
+
+  // A buddy fox takes over at the bottom of the window once the screen scrolls away.
+  const buddy = $("buddy");
+  let buddyOff = store.get("fuzzie-buddy") === "off";
+  let saidHi = false;
+  new IntersectionObserver(([e]) => {
+    const show = !e.isIntersecting && !buddyOff && scrollY > 200;
+    buddy.classList.toggle("show", show);
+    if (show && !saidHi) { saidHi = true; buddy.classList.add("talk"); setTimeout(() => buddy.classList.remove("talk"), 3200); }
+  }).observe($("scene"));
+  $("buddyClose").addEventListener("pointerdown", (e) => e.stopPropagation());
+  $("buddyClose").onclick = () => { buddyOff = true; store.set("fuzzie-buddy", "off"); buddy.classList.remove("show"); };
+
+  // The screen tilts back when it scrolls into place.
+  new IntersectionObserver(([e]) => $("scene").classList.toggle("flat", e.intersectionRatio > 0.55), { threshold: [0, 0.55, 1] }).observe($("scene"));
+
+  // ---------- notch pages on the screen ----------
+  const screens = [
+    ["Music", "img/music.png", "Cover, controls and synced lyrics, from Spotify, your browser or any media app.", "#ff8a3d", "#8a5cff"],
+    ["Lyrics off", "img/music_wide.png", "Turn lyrics off for a big cover and roomy controls.", "#ff4d8d", "#ffb050"],
+    ["Shelf", "img/shelf.png", "Files you dropped on the notch on the left, everything you copied on the right.", "#ffd23f", "#2ee6c5"],
+    ["Friends", "img/friends.png", "Who's online, what they play, Poke and Listen along.", "#2ee6c5", "#3d9bff"],
+    ["Add a friend", "img/friends_add.png", "Copy your code, paste theirs, press Send. All inside the notch.", "#8a5cff", "#ff4d8d"],
+    ["Requests", "img/friends_requests.png", "Accept or decline new friends, and see who hasn't answered yet.", "#3d9bff", "#8a5cff"],
+    ["Notifications", "img/notice.png", "Messages, volume, Caps Lock and audio device changes show up right in the notch.", "#ff6b6b", "#ffd23f"],
+    ["Resting", "img/closed.png", "When nothing is happening, the notch is a small black pill with the clock.", "#5a6cff", "#2a1a3a"],
+  ];
+  screens.forEach((s) => { const i = new Image(); i.src = s[1]; });
+  let si = 0, auto = true, swap = 0;
+  const show = (i) => {
+    si = i;
+    const img = $("shot");
+    img.classList.add("tuck");
+    clearTimeout(swap);
+    swap = setTimeout(() => {
+      img.src = screens[i][1];
+      img.alt = screens[i][0];
+      img.classList.remove("tuck");
+    }, 260);
+    $("scene").style.setProperty("--w1", screens[i][3]);
+    $("scene").style.setProperty("--w2", screens[i][4]);
+    $("tabText").textContent = screens[i][2];
+    document.querySelectorAll(".tab").forEach((t, k) => { t.classList.toggle("on", k === i); t.setAttribute("aria-selected", k === i); });
+  };
+  screens.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.className = "tab";
+    b.textContent = s[0];
+    b.setAttribute("role", "tab");
+    b.onclick = () => { auto = false; show(i); };
+    $("tabs").appendChild(b);
+  });
+  show(0);
+  setInterval(() => { if (auto && !document.hidden) show((si + 1) % screens.length); }, 4200);
+
+  // ---------- the moving strip ----------
+  const chips = [["&#9835;", "Synced lyrics", "#ff8a3d"], ["&#9638;", "Shelf", "#ffd23f"], ["&#10697;", "Clipboard", "#2ee6c5"], ["&#9000;", "Desktop Fuzzie", "#ff4d8d"], ["&#10084;", "Friends", "#ff6b9a"], ["&#9995;", "Pokes", "#ffb050"], ["&#127911;", "Listen along", "#8a5cff"], ["&#128276;", "Notifications", "#3d9bff"], ["&#128266;", "Volume HUD", "#5ad1ff"], ["&#10022;", "49 looks", "#c26bff"], ["&#127912;", "Any colour", "#1ed760"], ["&#9889;", "Rust + Direct2D", "#ffd23f"]];
+  const row = chips.map((c) => '<span class="chip"><i style="background:' + c[2] + '">' + c[0] + "</i>" + c[1] + "</span>").join("");
+  $("strip").innerHTML = row + row;
+
+  // ---------- studio ----------
+  const look = { skin: 0, acc: 0 };
+  // The big fox in the studio and its head in the notch never stop moving.
+  const stage = new Fox($("stageFox"));
+  const head = new Fox($("headFox"));
+  stage.always = head.always = true;
+  const paint = () => {
+    stage.set(look.skin, look.acc);
+    head.set(look.skin, look.acc);
+    $("stageName").innerHTML = SKINS[look.skin] + "<span>" + (look.acc ? "wearing " + ACCS[look.acc] : "no accessory") + "</span>";
+    document.querySelectorAll(".look").forEach((b) => b.classList.toggle("on", mode === "skins" ? +b.dataset.i === look.skin : +b.dataset.i === look.acc));
+  };
+  let mode = "skins";
+  const cards = [];
+  const build = () => {
+    cards.forEach((c) => c.stop());
+    cards.length = 0;
+    const grid = $("grid");
+    grid.replaceChildren();
+    const n = mode === "skins" ? SKINS.length : ACCS.length;
+    for (let i = 0; i < n; i++) {
+      const b = document.createElement("button");
+      b.className = "look";
+      b.dataset.i = i;
+      const name = mode === "skins" ? SKINS[i] : ACCS[i];
+      b.title = name;
+      const el = document.createElement("div");
+      el.className = "fx";
+      b.append(el, name);
+      const fox = new Fox(el);
+      if (mode === "skins") fox.set(i, look.acc); else fox.set(look.skin, i);
+      cards.push(fox);
+      b.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") fox.play(); });
+      b.addEventListener("pointerleave", () => fox.stop());
+      b.onclick = () => { if (mode === "skins") look.skin = i; else look.acc = i; paint(); };
+      grid.appendChild(b);
+    }
+    paint();
+    stage.play();
+    head.play();
+  };
+  $("segSkins").onclick = () => { mode = "skins"; $("segSkins").classList.add("on"); $("segAccs").classList.remove("on"); build(); };
+  $("segAccs").onclick = () => { mode = "accs"; $("segAccs").classList.add("on"); $("segSkins").classList.remove("on"); build(); };
+  $("shuffle").onclick = () => {
+    look.skin = Math.floor(Math.random() * SKINS.length);
+    look.acc = Math.random() < 0.15 ? 0 : 1 + Math.floor(Math.random() * (ACCS.length - 1));
+    build();
+  };
+  // Build the grid only when the studio comes near, so its pictures don't load up front.
+  new IntersectionObserver(([e], o) => { if (e.isIntersecting) { o.disconnect(); build(); } }, { rootMargin: "600px" }).observe($("looks"));
+
+  const colours = ["#FF8A3D", "#FF4D8D", "#C902F0", "#8A5CFF", "#3D8BFF", "#1ED7A5", "#FFD23F", "#9AA1AA"];
   const setColour = (c, el) => {
-    preview.style.setProperty("--pick", c);
-    $("looksGrid").style.setProperty("--pick", c);
+    document.documentElement.style.setProperty("--accent", c);
     document.querySelectorAll(".sw").forEach((s) => s.classList.toggle("on", s === el));
   };
   colours.forEach((c, i) => {
@@ -513,63 +891,24 @@
   custom.querySelector("input").oninput = (e) => setColour(e.target.value, custom);
   $("swatches").appendChild(custom);
 
-  looks.forEach((l, i) => {
-    const b = document.createElement("button");
-    b.className = "look" + (i === 0 ? " on" : "");
-    b.innerHTML = '<img loading="lazy" src="' + src(l) + '" alt="">' + l[2].split(" + ")[0];
-    b.title = l[2];
-    b.onclick = () => {
-      document.querySelectorAll(".look").forEach((x) => x.classList.toggle("on", x === b));
-      $("mockFox").src = src(l);
-      $("mockHead").src = src(l);
-      $("lookName").textContent = l[2];
-    };
-    $("looksGrid").appendChild(b);
-  });
+  // The fox at the end tries on a new look every couple of loops.
+  const finale = [[0, 17], [36, 11], [14, 8], [31, 20], [27, 18], [21, 19], [8, 13], [38, 3]];
+  const fin = autoplay(new Fox($("finalFox")).set(...finale[0]));
+  let fi = 0;
+  setInterval(() => { if (fin.live && !document.hidden) { fi = (fi + 1) % finale.length; fin.set(...finale[fi]); } }, LOOP_MS * 2);
 
-  // Screens tabs, rotating by themselves until one is clicked.
-  const screens = [
-    ["Music", "img/music.png", "Now playing", "Cover, controls and synced lyrics, from Spotify, your browser or any media app."],
-    ["Wide", "img/music_wide.png", "Lyrics off", "Turn lyrics off for a big cover and roomy controls."],
-    ["Shelf", "img/shelf.png", "Shelf & clipboard", "Files you dropped on the notch on the left, everything you copied on the right."],
-    ["Friends", "img/friends.png", "Friends", "Who's online, what they play, Poke and Listen along."],
-    ["Add friend", "img/friends_add.png", "Add a friend", "Copy your code, paste theirs, press Send. All inside the notch."],
-    ["Requests", "img/friends_requests.png", "Requests", "Accept or decline new friends, and see who hasn't answered yet."],
-    ["Notifications", "img/notice.png", "Notifications", "Messages, volume, Caps Lock and audio device changes show up right in the notch."],
-  ];
-  let si = 0, auto = true;
-  const show = (i) => {
-    si = i;
-    const img = $("shot");
-    img.classList.add("out");
-    setTimeout(() => {
-      img.src = screens[i][1];
-      img.alt = screens[i][2];
-      $("shotTitle").textContent = screens[i][2];
-      $("shotText").textContent = screens[i][3];
-      img.classList.remove("out");
-    }, 220);
-    document.querySelectorAll(".tab").forEach((t, k) => t.classList.toggle("on", k === i));
-  };
-  screens.forEach((s, i) => {
-    const b = document.createElement("button");
-    b.className = "tab";
-    b.textContent = s[0];
-    b.onclick = () => { auto = false; show(i); };
-    $("tabs").appendChild(b);
-  });
-  show(0);
-  setInterval(() => { if (auto) show((si + 1) % screens.length); }, 4200);
-
-  // Copy button (a sample code; yours is in the app).
+  // ---------- small things ----------
   $("copyBtn").onclick = () => {
     if (navigator.clipboard) navigator.clipboard.writeText("FUZ-A4G7B9").catch(() => {});
     $("copyBtn").textContent = "Copied!";
     setTimeout(() => ($("copyBtn").textContent = "Copy"), 1400);
   };
-
-  // Fade sections in as they scroll into view.
-  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("seen"); io.unobserve(e.target); } }), { threshold: 0.12 });
+  document.querySelectorAll(".card").forEach((c) => c.addEventListener("pointermove", (e) => {
+    const r = c.getBoundingClientRect();
+    c.style.setProperty("--mx", e.clientX - r.left + "px");
+    c.style.setProperty("--my", e.clientY - r.top + "px");
+  }));
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("seen"); io.unobserve(e.target); } }), { threshold: 0.1 });
   document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
 </script>
 </body>
