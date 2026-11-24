@@ -102,6 +102,8 @@ pub struct Settings {
     /// Translucent background.
     pub glass: bool,
     pub show_mascot: bool,
+    /// Skin and accessory glow effects for the notch / UI mascot (independent of Desktop Fuzzie).
+    pub mascot_glow: bool,
     pub nap_enabled: bool,
     pub nap_after_secs: u32,
     pub nap_while_music: bool,
@@ -182,6 +184,7 @@ impl Default for Settings {
             custom_y: -1,
             glass: false,
             show_mascot: true,
+            mascot_glow: true,
             nap_enabled: true,
             nap_after_secs: 60,
             nap_while_music: true,

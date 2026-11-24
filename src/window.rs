@@ -143,10 +143,18 @@ struct App {
     /// already jumped to their position in.
     along_opened: String,
     along_synced: String,
-    /// Friends page: 0 the list, 1 add a friend, 2 requests; the friend code
-    /// being typed, whether the box has the keyboard, and a short note.
+    /// Friends page: 0 the list, 1 add a friend, 2 requests, 3 friend/bot profile.
     friend_view: u8,
     friend_tab: u8,
+    friend_selected: String,
+    /// Active 1-second Poke/Kiss combo: (friend_code, is_kiss, count, last_click_time).
+    combo: Option<(String, bool, u32, Instant)>,
+    /// Floating "+1" particles above Poke/Kiss buttons: (is_kiss, born_at, dx).
+    pops: Vec<(bool, Instant, f32)>,
+    /// Brief happy smile on the friend's profile avatar after clicking Poke/Kiss.
+    profile_happy: Option<Instant>,
+    /// Incoming Poke/Kiss banner shown at the top of the expanded notch even while poking/kissing.
+    top_banner: Option<(crate::notify::Notice, Instant)>,
     friend_input: String,
     friend_typing: bool,
     friend_note: Option<(String, Instant)>,
@@ -270,6 +278,11 @@ pub fn run(settings: Settings) -> Result<()> {
             along_synced: String::new(),
             friend_view: 0,
             friend_tab: 0,
+            friend_selected: String::new(),
+            combo: None,
+            pops: Vec::new(),
+            profile_happy: None,
+            top_banner: None,
             friend_input: String::new(),
             friend_typing: false,
             friend_note: None,
@@ -458,6 +471,38 @@ impl App {
             self.flash = (v > 0.0).then_some((h, v));
             moving = true;
         }
+        // Flush 1-second Poke/Kiss combo once idle for >= 1s; keep animating while active.
+        if let Some((_, _, _, last)) = &self.combo {
+            if last.elapsed() >= Duration::from_secs(1) {
+                if let Some((code, is_kiss, count, _)) = self.combo.take() {
+                    if is_kiss {
+                        crate::social::kiss_combo(&code, count);
+                    } else {
+                        crate::social::poke_combo(&code, count);
+                    }
+                }
+            } else {
+                moving = true;
+            }
+        }
+        self.pops.retain(|p| p.1.elapsed() < Duration::from_millis(700));
+        if !self.pops.is_empty() {
+            moving = true;
+        }
+        if let Some(at) = self.profile_happy {
+            if at.elapsed() >= Duration::from_millis(650) {
+                self.profile_happy = None;
+            } else {
+                moving = true;
+            }
+        }
+        if let Some((_, at)) = &self.top_banner {
+            if at.elapsed() >= Duration::from_millis(3200) {
+                self.top_banner = None;
+            } else {
+                moving = true;
+            }
+        }
         self.animating = moving;
     }
 
@@ -511,6 +556,16 @@ impl App {
             grad_strength: s.gradient_strength.clamp(0.0, 1.0),
             grad_soft: s.gradient_softness.clamp(0.0, 1.0),
         };
+        let pops_view: Vec<(bool, f32, f32)> = self
+            .pops
+            .iter()
+            .map(|&(is_kiss, born, dx)| (is_kiss, (born.elapsed().as_secs_f32() / 0.7).clamp(0.0, 1.0), dx))
+            .collect();
+        let top_banner_view = self.top_banner.as_ref().map(|(n, at)| {
+            let e = at.elapsed().as_secs_f32();
+            let t = if e < 0.25 { e / 0.25 } else if e > 2.9 { (3.2 - e) / 0.3 } else { 1.0 };
+            (n, t.clamp(0.0, 1.0))
+        });
         let scene = Scene {
             open: self.anim,
             page: self.page,
@@ -530,6 +585,11 @@ impl App {
             social_on: self.settings.social_on,
             friend_view: self.friend_view,
             friend_tab: self.friend_tab,
+            friend_selected: &self.friend_selected,
+            combo: self.combo.as_ref().map(|(c, k, n, _)| (c.as_str(), *k, *n)),
+            pops: &pops_view,
+            profile_happy: self.profile_happy.is_some(),
+            top_banner: top_banner_view,
             friend_input: &self.friend_input,
             friend_typing: self.friend_typing,
             friend_note: self.friend_note.as_ref().filter(|n| n.1.elapsed().as_secs() < 8).map(|n| n.0.as_str()),
@@ -547,7 +607,7 @@ impl App {
             side: self.side(),
             minimal: s.idle_style == IdleStyle::Minimal,
             visualizer: s.audio_visualizer,
-            mascot: s.show_mascot.then_some((crate::mascot::Look::new(s.species, s.skin, s.acc, s.acc2), self.sleeping)),
+            mascot: s.show_mascot.then_some((crate::mascot::Look::new(s.species, s.skin, s.acc, s.acc2).with_glow(s.mascot_glow), self.sleeping)),
             hover: &self.hover,
             flash: self.flash,
         };
@@ -633,7 +693,7 @@ impl App {
         save(self, "closed_idle.png");
         save(self, "closed_play.png");
         // A notification in the collapsed notch.
-        self.hud = Some(Hud::Notice(crate::notify::Notice { app: "Discord".into(), title: "Ada Lovelace".into(), body: "Are we still on for tonight? I'll bring the notes.".into(), fox: None }));
+        self.hud = Some(Hud::Notice(crate::notify::Notice { app: "Discord".into(), title: "Ada Lovelace".into(), body: "Are we still on for tonight? I'll bring the notes.".into(), fox: None, badge: String::new() }));
         self.hud_until = Some(Instant::now() + Duration::from_secs(60));
         self.hud_anim = 1.0;
         save(self, "notice.png");
@@ -670,6 +730,20 @@ impl App {
         self.friend_tab = 1;
         save(self, "friends_sent.png");
         self.friend_tab = 0;
+        self.friend_view = 3;
+        self.friend_selected = crate::social::BOT_CODE.into();
+        self.combo = Some((crate::social::BOT_CODE.into(), false, 5, Instant::now()));
+        self.pops = vec![(false, Instant::now(), -18.0), (false, Instant::now() - Duration::from_millis(180), 14.0), (false, Instant::now() - Duration::from_millis(340), -4.0)];
+        self.profile_happy = Some(Instant::now());
+        self.top_banner = Some((
+            crate::notify::Notice { app: "Fuzzie friends".into(), title: "Fuzzie Bot poked you!".into(), body: String::new(), fox: Some(crate::mascot::Look::bot()), badge: "\u{00D7}5".into() },
+            Instant::now() - Duration::from_millis(600),
+        ));
+        save(self, "friends_bot.png");
+        self.combo = None;
+        self.pops.clear();
+        self.profile_happy = None;
+        self.top_banner = None;
         self.friend_view = 0;
         // The shelf with a file and a clipboard row under the pointer.
         self.page = 1;
@@ -759,14 +833,25 @@ impl App {
     }
 
     /// Shows the next waiting notification once the notch is free for it.
+    /// Incoming Poke/Kiss notices also appear as a top banner when the notch is expanded!
     fn show_notices(&mut self) {
         let mut q = self.notices.lock().unwrap();
         if !self.settings.show_notifications || self.hidden {
             q.clear();
             return;
         }
+        if self.open {
+            if q.front().is_some_and(|n| n.fox.is_some()) {
+                if let Some(n) = q.pop_front() {
+                    drop(q);
+                    self.top_banner = Some((n, Instant::now()));
+                    self.start_anim();
+                }
+            }
+            return;
+        }
         let busy = self.hud_until.is_some() && matches!(self.hud, Some(Hud::Notice(_)));
-        if busy || self.open {
+        if busy {
             return;
         }
         if let Some(n) = q.pop_front() {
@@ -775,6 +860,37 @@ impl App {
             self.hud_until = Some(Instant::now() + NOTICE_TIME);
             self.start_anim();
         }
+    }
+
+    /// Accumulates rapid Poke/Kiss clicks (<1 s apart) into a combo, spawning "+1" visual feedback
+    /// and a happy avatar reaction; flushes the final batched count once the combo finishes.
+    fn trigger_combo(&mut self, code: String, is_kiss: bool) {
+        let now = Instant::now();
+        let same = self.combo.as_ref().is_some_and(|(c, k, _, last)| *c == code && *k == is_kiss && last.elapsed() < Duration::from_secs(1));
+        if same {
+            if let Some(c) = &mut self.combo {
+                c.2 += 1;
+                c.3 = now;
+            }
+        } else {
+            // Flush any previous unfinished combo before starting the new one.
+            if let Some((old_code, old_kiss, old_count, _)) = self.combo.take() {
+                if old_kiss {
+                    crate::social::kiss_combo(&old_code, old_count);
+                } else {
+                    crate::social::poke_combo(&old_code, old_count);
+                }
+            }
+            self.combo = Some((code, is_kiss, 1, now));
+        }
+        let n = self.combo.as_ref().map_or(1, |c| c.2);
+        let spread = [-24.0f32, 16.0, -8.0, 26.0, -18.0, 6.0][(n as usize) % 6];
+        if self.pops.len() >= 12 {
+            self.pops.remove(0);
+        }
+        self.pops.push((is_kiss, now, spread));
+        self.profile_happy = Some(now);
+        self.start_anim();
     }
 
     /// Shares what plays, follows a friend we listen along with, and says
@@ -1166,14 +1282,20 @@ impl App {
                     crate::social::decline(c);
                 }
             }
+            Hit::FriendCard(i) => {
+                if let Some(f) = crate::social::snapshot().friends.get(i) {
+                    self.friend_selected = f.code.clone();
+                    self.friend_view = 3;
+                }
+            }
             Hit::Poke(i) => {
                 if let Some(f) = crate::social::snapshot().friends.get(i) {
-                    crate::social::poke(&f.code);
+                    self.trigger_combo(f.code.clone(), false);
                 }
             }
             Hit::Kiss(i) => {
                 if let Some(f) = crate::social::snapshot().friends.get(i) {
-                    crate::social::kiss(&f.code);
+                    self.trigger_combo(f.code.clone(), true);
                 }
             }
             Hit::Along(i) => {

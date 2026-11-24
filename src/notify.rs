@@ -20,6 +20,8 @@ pub struct Notice {
     pub body: String,
     /// A friend's Fuzzie look shown instead of the bell.
     pub fox: Option<crate::mascot::Look>,
+    /// Optional right-aligned combo badge (e.g. "×5" on batched pokes/kisses).
+    pub badge: String,
 }
 
 pub type Queue = Arc<Mutex<VecDeque<Notice>>>;
@@ -202,7 +204,7 @@ fn parse(handler: &str, xml: &str) -> Option<Notice> {
     let mut it = texts.into_iter();
     let title = it.next()?;
     let body: Vec<String> = it.collect();
-    Some(Notice { app: app_name(handler), title, body: body.join(" \u{00B7} "), fox: None })
+    Some(Notice { app: app_name(handler), title, body: body.join(" \u{00B7} "), fox: None, badge: String::new() })
 }
 
 fn unescape(s: &str) -> String {

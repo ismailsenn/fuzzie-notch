@@ -39,10 +39,11 @@ use crate::window;
 
 /// Head width in logical pixels at 100 % size; the window is sized around it.
 const BASE_SIZE: f32 = 100.0;
-/// Window size and the fox's centre, in head widths.
-const W_K: f32 = 1.9;
-const H_K: f32 = 1.85;
-const FOX_Y_K: f32 = 1.15;
+/// Window size and the fox's centre, in head widths (generous transparent margin so long ears,
+/// ribbons, tails and yarn ball never clip even when reclining on its back).
+const W_K: f32 = 2.35;
+const H_K: f32 = 2.05;
+const FOX_Y_K: f32 = 1.28;
 /// Resting belly/paws sit flush on the taskbar top edge; tapping paws dip slightly onto it.
 const PAW_LINE_K: f32 = 0.44;
 
@@ -56,8 +57,9 @@ const TIMER_EYES: usize = 4;
 const TIMER_ANIM: usize = 5;
 /// Ends the see-through spell of a right-click.
 const TIMER_GHOST: usize = 6;
-/// 60 FPS during active sleep/wake/yarn transitions and taps; calm 30/20 FPS when settled.
-const TRANS_MS: u32 = 16;
+/// 10 ms hits every 15.6 ms Windows tick (~64 FPS) during sleep/wake/yarn transitions;
+/// 33/50 ms when calmly idling.
+const TRANS_MS: u32 = 10;
 const ANIM_MS: u32 = 33;
 const ZZZ_MS: u32 = 50;
 const PAW_MS: u32 = 110;
@@ -140,6 +142,8 @@ struct Desk {
     sleeping: bool,
     hidden: bool,
     pos: POINT,
+    /// Saved user position before yarn play nudges away from a screen edge, restored on exit.
+    home_pos: Option<POINT>,
     /// Dragging: cursor and window position when the button went down.
     drag: Option<(POINT, POINT)>,
     raised: Instant,
@@ -432,6 +436,7 @@ fn open(s: &Settings) -> Result<()> {
             sleeping: false,
             hidden: false,
             pos: POINT { x, y },
+            home_pos: None,
             drag: None,
             raised: Instant::now(),
             forced: None,
@@ -620,24 +625,54 @@ impl Desk {
             self.hype = (self.hype - dt * 0.42).max(0.0);
         }
 
-        // Smooth organic sleep/wake transition (~0.65s into sleep, ~0.35s waking up).
+        // Smooth 64 FPS organic sleep/wake transition (~0.48s into sleep, ~0.33s waking up).
         let sleep_target = if self.sleeping { 1.0 } else { 0.0 };
-        let sleep_rate = if self.sleeping { 1.55 } else { 2.85 };
+        let sleep_rate = if self.sleeping { 2.1 } else { 3.0 };
         if self.sleep_mix < sleep_target {
             self.sleep_mix = (self.sleep_mix + dt * sleep_rate).min(sleep_target);
         } else if self.sleep_mix > sleep_target {
             self.sleep_mix = (self.sleep_mix - dt * sleep_rate).max(sleep_target);
         }
 
-        // Smooth organic roll into/out of yarn-ball play mode (~0.6s).
+        // Smooth organic roll into/out of yarn-ball play mode (~0.55s).
         if self.yarn_mode && (self.sleeping || now >= self.yarn_until + std::time::Duration::from_secs(6)) {
             self.yarn_mode = false;
         }
         let yarn_target = if self.yarn_mode && !self.sleeping { 1.0 } else { 0.0 };
+        let prev_ym = self.yarn_mix;
         if self.yarn_mix < yarn_target {
-            self.yarn_mix = (self.yarn_mix + dt * 1.65).min(yarn_target);
+            self.yarn_mix = (self.yarn_mix + dt * 1.85).min(yarn_target);
         } else if self.yarn_mix > yarn_target {
-            self.yarn_mix = (self.yarn_mix - dt * 1.85).max(yarn_target);
+            self.yarn_mix = (self.yarn_mix - dt * 2.0).max(yarn_target);
+        }
+        // Keep reclining yarn pose safely inside the screen edges, and restore the user's exact
+        // position smoothly when returning to normal tap mode.
+        if (self.yarn_mix - prev_ym).abs() > 0.0001 && self.drag.is_none() && self.pos.x > -3000 {
+            if self.home_pos.is_none() && self.yarn_mix > 0.0 {
+                self.home_pos = Some(self.pos);
+            }
+            if let Some(home) = self.home_pos {
+                let probe = POINT { x: home.x + self.width / 2, y: home.y + self.height / 2 };
+                let (mon, work) = monitor_at(probe);
+                let bounds = if self.on_taskbar { work } else { mon };
+                // Visible reclining half-width is ~0.92 head units on the left and ~0.88 on the right.
+                let safe_pad_l = ((W_K * 0.5 - 0.94) * self.size * self.scale).round() as i32;
+                let safe_pad_r = ((W_K * 0.5 - 0.90) * self.size * self.scale).round() as i32;
+                let safe_lo = bounds.left - safe_pad_l;
+                let safe_hi = (bounds.right - self.width + safe_pad_r).max(safe_lo);
+                let safe_x = home.x.clamp(safe_lo, safe_hi);
+                let e = self.yarn_mix * self.yarn_mix * (3.0 - 2.0 * self.yarn_mix);
+                let nx = (home.x as f32 + (safe_x - home.x) as f32 * e).round() as i32;
+                if nx != self.pos.x {
+                    self.pos.x = nx;
+                    self.move_to();
+                }
+                if self.yarn_mix <= 0.0001 {
+                    self.pos = home;
+                    self.move_to();
+                    self.home_pos = None;
+                }
+            }
         }
 
         // Yarn ball bounce, squash & spin physics while playing (centered over reclining tummy x=0.18).
@@ -1123,7 +1158,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_LBUTTONDOWN => {
             let mut cur = POINT::default();
             let _ = GetCursorPos(&mut cur);
-            with_desk(|d| d.drag = Some((cur, d.pos)));
+            with_desk(|d| {
+                d.home_pos = None;
+                d.drag = Some((cur, d.pos));
+            });
             SetCapture(hwnd);
             LRESULT(0)
         }

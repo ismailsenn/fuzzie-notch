@@ -34,16 +34,23 @@ pub struct Look {
     pub acc2: usize,
     /// Exclusive robotic visor & antenna look for the built-in Fuzzie Bot friend.
     pub bot: bool,
+    /// Disables skin/accessory glow effects when rendering this look (notch / UI option).
+    pub glow_off: bool,
 }
 
 impl Look {
     pub const fn new(species: usize, skin: usize, acc: usize, acc2: usize) -> Self {
-        Self { species, skin, acc, acc2, bot: false }
+        Self { species, skin, acc, acc2, bot: false, glow_off: false }
+    }
+
+    pub const fn with_glow(mut self, glow: bool) -> Self {
+        self.glow_off = !glow;
+        self
     }
 
     pub const fn bot() -> Self {
         // Graphite Fluffy Fox with exclusive robotic visor & antenna gear.
-        Self { species: 0, skin: 2, acc: 0, acc2: 0, bot: true }
+        Self { species: 0, skin: 2, acc: 0, acc2: 0, bot: true, glow_off: false }
     }
 }
 
@@ -679,14 +686,16 @@ struct Bongo {
     yarn_ball: [f32; 4],
 }
 
-/// The fox being drawn has its glows turned off.
+/// The mascot being drawn has its glows turned off.
 fn glow_off() -> bool {
-    BONGO.with(|c| c.get()).is_some_and(|b| !b.glow)
+    LOOK_GLOW_OFF.with(|c| c.get()) || BONGO.with(|c| c.get()).is_some_and(|b| !b.glow)
 }
 
 thread_local! {
     // Set while the desktop mascot draws: pose, paws, squash, hype and eyes.
     static BONGO: std::cell::Cell<Option<Bongo>> = const { std::cell::Cell::new(None) };
+    // Set while drawing a Look with glow_off = true (notch / UI mascot glow toggle).
+    static LOOK_GLOW_OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     // What [`fox`] draws: 1 the mascot itself, 2 accessory parts behind it, 4 accessory parts on it.
     static LAYERS: std::cell::Cell<u8> = const { std::cell::Cell::new(7) };
 }
@@ -755,6 +764,11 @@ pub fn draw_layers(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, c
 
 #[allow(clippy::too_many_arguments)]
 pub fn draw_still(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx: f32, cy: f32, size: f32, a: f32, sleeping: bool, blink: f32) -> Result<()> {
+    draw_still_hype(rt, factory, look, cx, cy, size, a, sleeping, blink, 0.0)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn draw_still_hype(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx: f32, cy: f32, size: f32, a: f32, sleeping: bool, blink: f32, hype: f32) -> Result<()> {
     BONGO.with(|c| {
         c.set(Some(Bongo {
             paws: None,
@@ -766,7 +780,7 @@ pub fn draw_still(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx
             squash: 0.0,
             head_bob: 0.0,
             ear_bounce: [0.0; 2],
-            hype: 0.0,
+            hype,
             sleep_mix: if sleeping { 1.0 } else { 0.0 },
             yarn_mix: 0.0,
             yarn_ball: [0.0; 4],
@@ -1089,7 +1103,9 @@ pub fn draw(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx: f32,
     };
     // Each mascot gets its own rhythm so a grid of them does not blink in step.
     let phase = ((look.skin % SKINS.len()) as f32 * 0.618 + acc as f32 * 0.377 + look.species as f32 * 0.213).fract() * 11.0;
+    let prev_glow_off = LOOK_GLOW_OFF.with(|c| c.replace(look.glow_off));
     let r = fox(&pen, info, sk, acc, acc2, look.bot, sleeping, t + phase, size);
+    LOOK_GLOW_OFF.with(|c| c.set(prev_glow_off));
     unsafe { rt.SetTransform(&old) };
     r
 }
@@ -1131,7 +1147,8 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
     let head_bob = bongo.map_or(0.0, |b| b.head_bob);
     let ear_bounce = bongo.map_or([0.0; 2], |b| b.ear_bounce);
     let hype = bongo.map_or(0.0, |b| b.hype);
-    let sm = bongo.map_or(if sleeping { 1.0 } else { 0.0 }, |b| b.sleep_mix);
+    let sm_raw = bongo.map_or(if sleeping { 1.0 } else { 0.0 }, |b| b.sleep_mix);
+    let sm = sm_raw * sm_raw * (3.0 - 2.0 * sm_raw); // butter-smooth cubic ease-in-out
     let ym_raw = bongo.map_or(0.0, |b| b.yarn_mix);
     let ym = ym_raw * ym_raw * (3.0 - 2.0 * ym_raw); // smoothstep organic roll
     let yarn_ball = bongo.map_or([0.18, -0.30, 0.0, 0.0], |b| b.yarn_ball);

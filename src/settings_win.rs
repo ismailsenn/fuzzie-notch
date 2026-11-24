@@ -135,6 +135,7 @@ pub enum Key {
     Glass,
     Colors,
     ShowMascot,
+    MascotGlow,
     Nap,
     NapAfter,
     NapWhileMusic,
@@ -181,6 +182,7 @@ fn get_bool(s: &Settings, k: Key) -> bool {
         Key::Seconds => s.show_seconds,
         Key::Glass => s.glass,
         Key::ShowMascot => s.show_mascot,
+        Key::MascotGlow => s.mascot_glow,
         Key::Nap => s.nap_enabled,
         Key::NapWhileMusic => s.nap_while_music,
         Key::DeskFox => s.desk_fox,
@@ -219,6 +221,7 @@ fn set_bool(s: &mut Settings, k: Key, v: bool) {
         Key::Seconds => &mut s.show_seconds,
         Key::Glass => &mut s.glass,
         Key::ShowMascot => &mut s.show_mascot,
+        Key::MascotGlow => &mut s.mascot_glow,
         Key::Nap => &mut s.nap_enabled,
         Key::NapWhileMusic => &mut s.nap_while_music,
         Key::DeskFox => &mut s.desk_fox,
@@ -830,6 +833,7 @@ impl SettingsWindow {
                     _ => v.extend([
                         Section("NOTCH MASCOT"),
                         Toggle("Show mascot in notch", Key::ShowMascot),
+                        Toggle("Glow effects", Key::MascotGlow),
                         Toggle("Nap when I'm away", Key::Nap),
                         Segment("Start napping after", Key::NapAfter, &["10 s", "30 s", "1 min", "2 min", "5 min"]),
                         Toggle("Nap while music plays", Key::NapWhileMusic),
@@ -1080,7 +1084,7 @@ impl SettingsWindow {
         unsafe {
             rt.PushAxisAlignedClip(&D2D_RECT_F { left: 0.0, top: 0.0, right: 76.0, bottom: 96.0 }, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         }
-        let look = mascot::Look::new(s.species, s.skin, s.acc, s.acc2);
+        let look = mascot::Look::new(s.species, s.skin, s.acc, s.acc2).with_glow(s.mascot_glow);
         let r = mascot::draw(rt, &self.factory, look, 44.0, 56.0, 42.0, 1.0, false, self.time());
         unsafe {
             rt.PopAxisAlignedClip();
@@ -1105,7 +1109,7 @@ impl SettingsWindow {
             }
         }
         let size = 158.0;
-        let look = mascot::Look::new(s.species, s.skin, s.acc, s.acc2);
+        let look = mascot::Look::new(s.species, s.skin, s.acc, s.acc2).with_glow(s.mascot_glow);
         mascot::draw(rt, &self.factory, look, sx, floor - 0.47 * size, size, 1.0, false, t)
     }
 

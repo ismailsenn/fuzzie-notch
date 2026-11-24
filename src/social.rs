@@ -181,34 +181,49 @@ pub fn remove(code: &str) {
 }
 
 pub fn poke(code: &str) {
-    crate::stats::record_poke(true);
-    if is_bot(code) {
-        bot_reply(false);
-        return;
-    }
-    send(json!({"t": "poke", "to": code}));
+    poke_combo(code, 1);
 }
 
 pub fn kiss(code: &str) {
-    crate::stats::record_kiss(true);
-    if is_bot(code) {
-        bot_reply(true);
-        return;
-    }
-    send(json!({"t": "kiss", "to": code}));
+    kiss_combo(code, 1);
 }
 
-/// Fuzzie Bot replies back with a poke or kiss after a short, natural delay.
-fn bot_reply(is_kiss: bool) {
+/// Sends a single or batched combo poke (`count >= 1`). Bot interactions do not count in stats.
+pub fn poke_combo(code: &str, count: u32) {
+    let count = count.max(1);
+    if is_bot(code) {
+        bot_reply(false, count);
+        return;
+    }
+    for _ in 0..count {
+        crate::stats::record_poke(true);
+    }
+    send(json!({"t": "poke", "to": code, "count": count}));
+}
+
+/// Sends a single or batched combo kiss (`count >= 1`). Bot interactions do not count in stats.
+pub fn kiss_combo(code: &str, count: u32) {
+    let count = count.max(1);
+    if is_bot(code) {
+        bot_reply(true, count);
+        return;
+    }
+    for _ in 0..count {
+        crate::stats::record_kiss(true);
+    }
+    send(json!({"t": "kiss", "to": code, "count": count}));
+}
+
+/// Fuzzie Bot replies back with a matching poke or kiss (preserving combo count) after a short delay.
+fn bot_reply(is_kiss: bool, count: u32) {
     let Some(q) = NOTICES.get().cloned() else { return };
     let _ = std::thread::Builder::new().name("bot-reply".into()).stack_size(256 * 1024).spawn(move || {
-        std::thread::sleep(Duration::from_millis(1100));
+        std::thread::sleep(Duration::from_millis(950));
+        let badge = if count > 1 { format!("\u{00D7}{count}") } else { String::new() };
         if is_kiss {
-            crate::stats::record_kiss(false);
-            notice(&q, "Fuzzie Bot sent you a kiss!".into(), "Beep boop \u{2665}".into(), Some(crate::mascot::Look::bot()));
+            notice(&q, "Fuzzie Bot kissed you!".into(), String::new(), Some(crate::mascot::Look::bot()), badge);
         } else {
-            crate::stats::record_poke(false);
-            notice(&q, "Fuzzie Bot poked you back!".into(), "Beep boop!".into(), Some(crate::mascot::Look::bot()));
+            notice(&q, "Fuzzie Bot poked you!".into(), String::new(), Some(crate::mascot::Look::bot()), badge);
         }
     });
 }
@@ -477,9 +492,9 @@ fn post(url: &str, body: &str) -> Option<String> {
     Some(resp.Content().ok()?.ReadAsStringAsync().ok()?.join().ok()?.to_string())
 }
 
-fn notice(q: &Queue, title: String, body: String, fox: Option<crate::mascot::Look>) {
+fn notice(q: &Queue, title: String, body: String, fox: Option<crate::mascot::Look>, badge: String) {
     if let Ok(mut q) = q.lock() {
-        q.push_back(Notice { app: "Fuzzie friends".into(), title, body, fox });
+        q.push_back(Notice { app: "Fuzzie friends".into(), title, body, fox, badge });
     }
 }
 
@@ -558,22 +573,30 @@ fn handle(text: &str, q: &Queue) {
                 }
             });
             for name in new_requests {
-                notice(q, format!("{name} wants to be friends"), "Accept in Settings \u{2192} Social".into(), None);
+                notice(q, format!("{name} wants to be friends"), "Accept in Settings \u{2192} Social".into(), None, String::new());
             }
             for name in new_friends {
-                notice(q, format!("{name} accepted your request"), String::new(), None);
+                notice(q, format!("{name} accepted your request"), String::new(), None, String::new());
             }
         }
         Some("poke") => {
-            crate::stats::record_poke(false);
-            notice(q, format!("{} poked you", s(&m["name"])), String::new(), Some(crate::mascot::Look::new(0, n(&m["skin"]) as usize, n(&m["acc"]) as usize, 0)));
+            let count = n(&m["count"]).max(1) as u32;
+            for _ in 0..count {
+                crate::stats::record_poke(false);
+            }
+            let badge = if count > 1 { format!("\u{00D7}{count}") } else { String::new() };
+            notice(q, format!("{} poked you!", s(&m["name"])), String::new(), Some(crate::mascot::Look::new(0, n(&m["skin"]) as usize, n(&m["acc"]) as usize, 0)), badge);
         }
         Some("kiss") => {
-            crate::stats::record_kiss(false);
-            notice(q, format!("{} sent you a kiss", s(&m["name"])), String::new(), Some(crate::mascot::Look::new(0, n(&m["skin"]) as usize, n(&m["acc"]) as usize, 0)));
+            let count = n(&m["count"]).max(1) as u32;
+            for _ in 0..count {
+                crate::stats::record_kiss(false);
+            }
+            let badge = if count > 1 { format!("\u{00D7}{count}") } else { String::new() };
+            notice(q, format!("{} kissed you!", s(&m["name"])), String::new(), Some(crate::mascot::Look::new(0, n(&m["skin"]) as usize, n(&m["acc"]) as usize, 0)), badge);
         }
-        Some("join") => notice(q, format!("{} is listening along", s(&m["name"])), String::new(), None),
-        Some("leave") => notice(q, format!("{} stopped listening along", s(&m["name"])), String::new(), None),
+        Some("join") => notice(q, format!("{} is listening along", s(&m["name"])), String::new(), None, String::new()),
+        Some("leave") => notice(q, format!("{} stopped listening along", s(&m["name"])), String::new(), None, String::new()),
         Some("error") => {
             let msg = s(&m["msg"]);
             edit(|st| st.error = Some((msg, Instant::now())));

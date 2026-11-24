@@ -155,7 +155,8 @@ pub enum Hit {
     Cancel(usize),
     /// Requests page tab: 0 received, 1 sent.
     ReqTab(u8),
-    /// Poke or kiss the n-th friend on the friends page / listen along with them.
+    /// Open the n-th friend's profile card, poke/kiss them, or listen along.
+    FriendCard(usize),
     Poke(usize),
     Kiss(usize),
     Along(usize),
@@ -212,9 +213,19 @@ pub struct Scene<'a> {
     /// Friends, sorted as the friends page shows them.
     pub social: &'a crate::social::State,
     pub social_on: bool,
-    /// Friends page: 0 the list, 1 add a friend, 2 requests.
+    /// Friends page: 0 the list, 1 add a friend, 2 requests, 3 friend/bot profile.
     pub friend_view: u8,
     pub friend_tab: u8,
+    /// Selected friend code when `friend_view == 3`.
+    pub friend_selected: &'a str,
+    /// Active Poke/Kiss 1-second combo: (friend_code, is_kiss, count).
+    pub combo: Option<(&'a str, bool, u32)>,
+    /// Floating "+1" feedback particles above Poke/Kiss buttons: (is_kiss, age 0..1, dx).
+    pub pops: &'a [(bool, f32, f32)],
+    /// True briefly after poking/kissing so the friend's profile avatar smiles happily.
+    pub profile_happy: bool,
+    /// Incoming Poke/Kiss banner shown at the top of the expanded notch even while poking/kissing.
+    pub top_banner: Option<(&'a crate::notify::Notice, f32)>,
     /// The friend code typed so far, whether the box has the keyboard, and a short note.
     pub friend_input: &'a str,
     pub friend_typing: bool,
@@ -743,11 +754,15 @@ impl Renderer {
             self.origin.set(zoom * origin);
             unsafe { rt.SetTransform(&self.origin.get()) };
             let first = hits.len();
-            let drawn = (|| {
+            let drawn: Result<()> = (|| {
                 self.header(s, cx0, cw, a_big, hits)?;
                 self.pages(s, cx0, cw, ch, a_big, hits)?;
                 self.next_page_tab(s, cx0, cw, a_big, hits)?;
-                self.page_dots(s, ch, a_big, hits)
+                self.page_dots(s, ch, a_big, hits)?;
+                if let Some((n, bt)) = s.top_banner {
+                    self.top_banner(s, n, cx0, cw, bt, a_big)?;
+                }
+                Ok(())
             })();
             self.origin.set(origin);
             unsafe {
@@ -1429,6 +1444,9 @@ impl Renderer {
         let lx = x0 + 22.0;
         let right = x0 + w - 18.0;
         let tr = D2D_RECT_F { left: lx, top: 42.0, right: lx + 200.0, bottom: 66.0 };
+        if s.friend_view == 3 && s.social_on {
+            return self.friend_profile_view(s, lx, right, a, hits);
+        }
         if s.friend_view != 0 && s.social_on {
             // "‹ Title": the whole thing goes back to the list.
             let title = if s.friend_view == 1 { "Add friend" } else { "Requests" };
@@ -1642,7 +1660,130 @@ impl Renderer {
         Ok(())
     }
 
-    /// Up to three friends: their Fuzzie, name, what they play, Poke / Listen.
+    /// Friend / Fuzzie Bot profile card: large circular avatar (smiles happily on poke/kiss),
+    /// status, Poke & Kiss action pills with active combo counter and floating "+1" feedback.
+    fn friend_profile_view(&self, s: &Scene, lx: f32, right: f32, a: f32, hits: &mut Hits) -> Result<()> {
+        let so = s.social;
+        let Some((idx, f)) = so.friends.iter().enumerate().find(|(_, f)| f.code == s.friend_selected) else {
+            return self.friend_rows(s, lx, right, a, hits);
+        };
+        // Back chevron at top-left of profile.
+        let back = D2D_RECT_F { left: lx - 8.0, top: 44.0, right: lx + 18.0, bottom: 70.0 };
+        let bhot = s.hv(Hit::FriendsBack);
+        if bhot > 0.0 {
+            unsafe {
+                let rr = D2D1_ROUNDED_RECT { rect: back, radiusX: 10.0, radiusY: 10.0 };
+                self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), 0.10 * bhot * a)?);
+            }
+        }
+        self.text("\u{E76B}", &self.f.icons_small, back, self.fg(), a)?;
+        hits.push((back, Hit::FriendsBack));
+
+        // Large circular avatar badge on the left.
+        let (acx, acy, ar) = (lx + 52.0, 96.0, 38.0);
+        unsafe {
+            let e = D2D1_ELLIPSE { point: Vector2 { X: acx, Y: acy }, radiusX: ar, radiusY: ar };
+            self.rt.FillEllipse(&e, &self.brush(self.fg(), 0.06 * a)?);
+            if s.profile_happy {
+                self.rt.DrawEllipse(&e, &self.brush(s.theme.accent, 0.55 * a)?, 1.5, None);
+            }
+        }
+        let look = if f.is_bot { mascot::Look::bot() } else { mascot::Look::new(0, f.skin, f.acc, 0) };
+        let hype = if s.profile_happy { 0.85 } else { 0.0 };
+        mascot::draw_still_hype(&self.rt, &self.factory, look, acx, acy + 3.0, 44.0, a, !f.online, 0.0, hype)?;
+
+        // Friend name + online dot + status.
+        let tx = acx + ar + 18.0;
+        let nw = self.measure(&f.name, &self.f.big);
+        self.text(&f.name, &self.f.big, D2D_RECT_F { left: tx, top: 54.0, right: right - 10.0, bottom: 86.0 }, self.fg(), a)?;
+        let dot_x = (tx + nw + 12.0).min(right - 70.0);
+        let dot_c = if f.online { [0.25, 0.85, 0.45] } else { [0.55, 0.55, 0.62] };
+        unsafe {
+            let e = D2D1_ELLIPSE { point: Vector2 { X: dot_x, Y: 70.0 }, radiusX: 4.5, radiusY: 4.5 };
+            self.rt.FillEllipse(&e, &self.brush(dot_c, a)?);
+        }
+        let st_txt = if f.is_bot { "Online  \u{00B7}  Bot" } else if f.online { "Online" } else { "Offline" };
+        self.text(st_txt, &self.f.small, D2D_RECT_F { left: dot_x + 10.0, top: 61.0, right, bottom: 80.0 }, self.dim(), a)?;
+
+        let sub = if f.is_bot {
+            "Always online. Nothing here counts in your stats.".to_string()
+        } else if let Some(t) = &f.np {
+            if t.artist.is_empty() { format!("\u{266A} {}", t.title) } else { format!("\u{266A} {} \u{2014} {}", t.title, t.artist) }
+        } else if f.online {
+            "Ready to hang out.".to_string()
+        } else {
+            "Currently offline.".to_string()
+        };
+        self.text(&sub, &self.f.small, D2D_RECT_F { left: tx, top: 92.0, right, bottom: 114.0 }, self.dim(), a)?;
+
+        // Action pills along the bottom (Poke & Kiss, plus Listen if a real friend is playing).
+        let active_combo = s.combo.filter(|(c, _, _)| *c == f.code);
+        let btn_y = 148.0;
+        let btn_h = 34.0;
+        let mut bx = lx;
+        let has_listen = f.online && f.np.is_some();
+        let bw = if has_listen { 132.0 } else { 172.0 };
+        let gap = 10.0;
+
+        let poke_r = D2D_RECT_F { left: bx, top: btn_y, right: bx + bw, bottom: btn_y + btn_h };
+        bx += bw + gap;
+        let kiss_r = D2D_RECT_F { left: bx, top: btn_y, right: bx + bw, bottom: btn_y + btn_h };
+        bx += bw + gap;
+
+        let draw_action = |r: D2D_RECT_F, icon: &str, label: &str, hit: Hit, accent: [f32; 3], active: bool, hits: &mut Hits| -> Result<()> {
+            let hot = s.hv(hit);
+            let fl = s.fl(hit);
+            let alpha_bg = (0.09 + 0.08 * hot + 0.14 * fl + if active { 0.07 } else { 0.0 }) * a;
+            unsafe {
+                let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 17.0, radiusY: 17.0 };
+                self.rt.FillRoundedRectangle(&rr, &self.brush(if active || fl > 0.05 { accent } else { self.fg() }, alpha_bg)?);
+                let border_a = (0.14 + 0.35 * hot + 0.55 * fl + if active { 0.45 } else { 0.0 }).min(0.95) * a;
+                self.rt.DrawRoundedRectangle(&rr, &self.brush(if active || fl > 0.05 { accent } else { self.fg() }, border_a)?, 1.3, None);
+            }
+            let lw = self.measure(label, &self.f.body);
+            let start = (r.left + r.right) / 2.0 - (lw + 22.0) / 2.0;
+            self.text(icon, &self.f.icons_small, D2D_RECT_F { left: start, right: start + 16.0, ..r }, accent, a)?;
+            self.text(label, &self.f.body, D2D_RECT_F { left: start + 20.0, right: start + 24.0 + lw, ..r }, self.fg(), a)?;
+            if f.online {
+                hits.push((r, hit));
+            }
+            Ok(())
+        };
+
+        let poke_on = active_combo.is_some_and(|(_, is_kiss, _)| !is_kiss);
+        let kiss_on = active_combo.is_some_and(|(_, is_kiss, _)| is_kiss);
+        let kiss_pink = [1.0, 0.42, 0.62];
+        draw_action(poke_r, "\u{E734}", "Poke", Hit::Poke(idx), s.theme.accent, poke_on, hits)?;
+        draw_action(kiss_r, "\u{EB52}", "Kiss", Hit::Kiss(idx), kiss_pink, kiss_on, hits)?;
+
+        if has_listen {
+            let along = so.along.as_deref() == Some(f.code.as_str());
+            let lr = D2D_RECT_F { left: bx, top: btn_y, right: right.min(bx + bw), bottom: btn_y + btn_h };
+            self.pill(s, lr, if along { "Listening" } else { "Listen" }, Hit::Along(idx), along, a, hits)?;
+        }
+
+        // Active combo counter ("×19") right above the active button corner.
+        if let Some((_, is_kiss, count)) = active_combo {
+            let r = if is_kiss { kiss_r } else { poke_r };
+            let txt = format!("\u{00D7}{count}");
+            let cr = D2D_RECT_F { left: r.right - 56.0, top: r.top - 22.0, right: r.right + 12.0, bottom: r.top + 2.0 };
+            self.text(&txt, &self.f.section, cr, self.fg(), a)?;
+        }
+
+        // Floating "+1" particles rising above the pressed button!
+        for &(is_kiss, age, dx) in s.pops {
+            let r = if is_kiss { kiss_r } else { poke_r };
+            let cx = (r.left + r.right) * 0.5 + dx;
+            let py = r.top - 10.0 - age * 38.0;
+            let pa = (1.0 - age).powf(0.75) * a;
+            let c = if is_kiss { kiss_pink } else { s.theme.accent };
+            let pr = D2D_RECT_F { left: cx - 18.0, top: py - 10.0, right: cx + 18.0, bottom: py + 12.0 };
+            self.text("+1", &self.f.section, pr, c, pa)?;
+        }
+        Ok(())
+    }
+
+    /// Up to three friends: their Fuzzie, name, what they play, Poke / Kiss / Listen.
     fn friend_rows(&self, s: &Scene, lx: f32, right: f32, a: f32, hits: &mut Hits) -> Result<()> {
         let so = s.social;
         const ROW: f32 = 42.0;
@@ -1651,10 +1792,12 @@ impl Renderer {
             let top = 74.0 + i as f32 * ROW;
             let cy = top + ROW / 2.0;
             let row = D2D_RECT_F { left: lx, top: top + 2.0, right, bottom: top + ROW - 2.0 };
+            let rhot = s.hv(Hit::FriendCard(i));
             unsafe {
                 let rr = D2D1_ROUNDED_RECT { rect: row, radiusX: 12.0, radiusY: 12.0 };
-                self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), 0.04 * a)?);
+                self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), (0.04 + 0.05 * rhot) * a)?);
             }
+            hits.push((row, Hit::FriendCard(i)));
             let fa = if f.online { a } else { a * 0.45 };
             let look = if f.is_bot { mascot::Look::bot() } else { mascot::Look::new(0, f.skin, f.acc, 0) };
             mascot::draw_still(&self.rt, &self.factory, look, lx + 22.0, cy + 1.0, 17.0, fa, !f.online, 0.0)?;
@@ -1925,12 +2068,13 @@ impl Renderer {
                     self.rt.FillEllipse(&e, &self.brush(accent, 0.22 * a)?);
                 }
                 if let Some(look) = n.fox {
-                    mascot::draw_still(&self.rt, &self.factory, look, cx, cy + 1.0, 22.0, a, false, 0.0)?;
+                    mascot::draw_still_hype(&self.rt, &self.factory, look, cx, cy + 1.0, 22.0, a, false, 0.0, 0.85)?;
                 } else {
                     let bell = D2D_RECT_F { left: cx - r, top: cy - r, right: cx + r, bottom: cy + r };
                     self.text("\u{EA8F}", &self.f.icons_small, bell, accent, a)?;
                 }
-                let (left, right) = (x0 + 58.0, x0 + w - 20.0);
+                let badge_w = if n.badge.is_empty() { 0.0 } else { 44.0 };
+                let (left, right) = (x0 + 58.0, x0 + w - 20.0 - badge_w);
                 let lines: [(&str, &IDWriteTextFormat, [f32; 3], f32); 3] = [(&n.app, &self.f.small, self.dim(), 15.0), (&n.title, &self.f.body, self.fg(), 19.0), (&n.body, &self.f.small, self.dim(), 16.0)];
                 let shown: Vec<_> = lines.iter().filter(|l| !l.0.is_empty()).collect();
                 let total: f32 = shown.iter().map(|l| l.3).sum();
@@ -1939,7 +2083,42 @@ impl Renderer {
                     self.text(t, f, D2D_RECT_F { left, top: y, right, bottom: y + lh }, *c, a)?;
                     y += lh;
                 }
+                if !n.badge.is_empty() {
+                    let br = D2D_RECT_F { left: x0 + w - 62.0, top: cy - 12.0, right: x0 + w - 16.0, bottom: cy + 12.0 };
+                    self.text(&n.badge, &self.f.section, br, accent, a)?;
+                }
             }
+        }
+        Ok(())
+    }
+
+    /// Compact incoming Poke/Kiss toast pill sliding down at the top of the expanded notch
+    /// (visible even while the user is actively poking/kissing below!).
+    fn top_banner(&self, s: &Scene, n: &crate::notify::Notice, x0: f32, w: f32, t: f32, a: f32) -> Result<()> {
+        let u = ease(t.clamp(0.0, 1.0));
+        let ba = u * a;
+        if ba <= 0.01 {
+            return Ok(());
+        }
+        let bw = (w - 36.0).min(380.0);
+        let bl = x0 + (w - bw) * 0.5;
+        let bh = 36.0;
+        let bt = lerp(-bh, 5.0, u);
+        let rect = D2D_RECT_F { left: bl, top: bt, right: bl + bw, bottom: bt + bh };
+        let rr = D2D1_ROUNDED_RECT { rect, radiusX: 18.0, radiusY: 18.0 };
+        unsafe {
+            self.rt.FillRoundedRectangle(&rr, &self.brush([0.05, 0.04, 0.07], 0.99 * ba)?);
+            self.rt.DrawRoundedRectangle(&rr, &self.brush(s.theme.accent, 0.60 * ba)?, 1.2, None);
+        }
+        let cy = bt + bh * 0.5;
+        if let Some(look) = n.fox {
+            mascot::draw_still_hype(&self.rt, &self.factory, look, bl + 24.0, cy + 1.0, 20.0, ba, false, 0.0, 0.85)?;
+        }
+        let badge_w = if n.badge.is_empty() { 0.0 } else { 44.0 };
+        self.text(&n.title, &self.f.body, D2D_RECT_F { left: bl + 46.0, top: bt, right: bl + bw - 14.0 - badge_w, bottom: bt + bh }, self.fg(), ba)?;
+        if !n.badge.is_empty() {
+            let br = D2D_RECT_F { left: bl + bw - 56.0, top: bt, right: bl + bw - 14.0, bottom: bt + bh };
+            self.text(&n.badge, &self.f.section, br, s.theme.accent, ba)?;
         }
         Ok(())
     }

@@ -139,11 +139,11 @@ const TAIL_BUNNY: &[S] = &[
 ];
 
 const TAIL_REDPANDA: &[S] = &[
-    M(-0.02, 0.05),
-    B(0.26, 0.11, 0.56, 0.01, 0.58, -0.22),
-    B(0.59, -0.35, 0.48, -0.42, 0.38, -0.38),
-    B(0.31, -0.35, 0.28, -0.22, 0.23, -0.14),
-    B(0.16, -0.06, 0.08, -0.04, -0.04, -0.04),
+    M(-0.02, 0.06),
+    B(0.24, 0.14, 0.56, 0.06, 0.62, -0.18),
+    B(0.66, -0.34, 0.52, -0.44, 0.38, -0.39),
+    B(0.29, -0.35, 0.26, -0.22, 0.20, -0.13),
+    B(0.14, -0.05, 0.06, -0.04, -0.04, -0.04),
     Z,
 ];
 
@@ -191,17 +191,20 @@ pub(super) fn draw_tail(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
             let tail = p.path("sp_tail_rp", TAIL_REDPANDA)?;
             p.fill_with(m, &tail, fur);
             if !p.small {
-                let dark = mix(sk.fur, INK, 0.68);
-                let light = mix(sk.cream, sk.fur, 0.25);
-                // Clean parallel rings stepping along the tail curve without overlapping.
-                let r1 = p.clip("sp_tail_rp_r1", &tail, |p| build_path(p.f, &[M(0.08, 0.12), L(0.22, -0.06), L(0.27, -0.02), L(0.13, 0.16), Z]))?;
-                let b1 = p.clip("sp_tail_rp_b1", &tail, |p| build_path(p.f, &[M(0.20, 0.14), L(0.34, -0.06), L(0.38, -0.02), L(0.24, 0.18), Z]))?;
-                let r2 = p.clip("sp_tail_rp_r2", &tail, |p| build_path(p.f, &[M(0.28, 0.10), L(0.45, -0.13), L(0.50, -0.08), L(0.33, 0.15), Z]))?;
-                let r3 = p.clip("sp_tail_rp_r3", &tail, |p| build_path(p.f, &[M(0.34, -0.15), L(0.56, -0.31), L(0.60, -0.24), L(0.38, -0.08), Z]))?;
-                p.fill(m, &r1, dark, 0.88);
-                p.fill(m, &b1, light, 0.78);
-                p.fill(m, &r2, dark, 0.88);
-                p.fill(m, &r3, dark, 0.88);
+                let band_hi = mix(sk.cream, sk.fur, 0.34);
+                let band_dk = mix(sk.fur, INK, 0.56);
+                let tip_dk = mix(sk.fur, INK, 0.68);
+                // Smooth curved fur rings following the plump cylindrical curve of the tail.
+                let b1 = p.clip("sp_tail_rp_b1", &tail, |p| build_path(p.f, &[M(0.08, -0.12), Q(0.16, 0.02, 0.08, 0.16), L(0.18, 0.16), Q(0.25, 0.01, 0.17, -0.12), Z]))?;
+                let r1 = p.clip("sp_tail_rp_r1", &tail, |p| build_path(p.f, &[M(0.20, -0.14), Q(0.30, 0.02, 0.24, 0.16), L(0.33, 0.14), Q(0.39, -0.02, 0.29, -0.17), Z]))?;
+                let b2 = p.clip("sp_tail_rp_b2", &tail, |p| build_path(p.f, &[M(0.30, -0.22), Q(0.42, -0.08, 0.42, 0.08), L(0.51, 0.02), Q(0.50, -0.14, 0.38, -0.27), Z]))?;
+                let r2 = p.clip("sp_tail_rp_r2", &tail, |p| build_path(p.f, &[M(0.34, -0.32), Q(0.49, -0.22, 0.56, -0.06), L(0.64, -0.14), Q(0.57, -0.30, 0.42, -0.39), Z]))?;
+                let tip = p.clip_el("sp_tail_rp_tip", &tail, 0.50, -0.34, 0.17, 0.14)?;
+                p.fill(m, &b1, band_hi, 0.85);
+                p.fill(m, &r1, band_dk, 0.85);
+                p.fill(m, &b2, band_hi, 0.85);
+                p.fill(m, &r2, band_dk, 0.85);
+                p.fill(m, &tip, tip_dk, 0.92);
             }
             p.stroke(m, &tail, p.line, 1.0, p.lw);
         }
@@ -296,7 +299,7 @@ pub(super) fn draw_body(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
 
     p.stroke(bm, &g, p.line, 1.0, p.lw);
 
-    // Playful curled hind feet on the right side of the reclining belly (kicking gently!).
+    // Single cute curled hind foot peeking cleanly at the right end of the belly (well clear of front paws!).
     if yarn_mix > 0.35 {
         let fa = ((yarn_mix - 0.35) / 0.45).clamp(0.0, 1.0);
         let paw_c = match sp {
@@ -306,15 +309,13 @@ pub(super) fn draw_body(p: &Pen, sp: Species, sk: &Skin, fur: &ID2D1Brush, body:
         };
         let pad = [1.0, 0.60, 0.72];
         let kick = (t * 5.2).sin() * 6.0 * fa;
-        for (hx, hy, deg) in [(0.42f32, 0.32f32, 24.0 - kick), (0.34, 0.27, 12.0 + kick)] {
-            let hm = Matrix3x2::scale(fa, fa) * rot(deg, 0.0, 0.0) * tr(hx, hy) * body;
-            p.fill_el(hm, 0.0, 0.0, 0.082, 0.062, paw_c, 1.0);
-            p.ring(hm, 0.0, 0.0, 0.082, 0.062, p.line, 1.0, p.lw);
-            if !p.small {
-                p.fill_el(hm, 0.008, 0.01, 0.028, 0.021, pad, 0.92);
-                for ty in [-0.024f32, 0.0, 0.024] {
-                    p.fill_el(hm, -0.026, ty, 0.012, 0.011, pad, 0.92);
-                }
+        let hm = Matrix3x2::scale(fa, fa) * rot(20.0 - kick, 0.0, 0.0) * tr(0.40, 0.34) * body;
+        p.fill_el(hm, 0.0, 0.0, 0.080, 0.060, paw_c, 1.0);
+        p.ring(hm, 0.0, 0.0, 0.080, 0.060, p.line, 1.0, p.lw);
+        if !p.small {
+            p.fill_el(hm, 0.008, 0.01, 0.027, 0.020, pad, 0.92);
+            for ty in [-0.023f32, 0.0, 0.023] {
+                p.fill_el(hm, -0.025, ty, 0.011, 0.010, pad, 0.92);
             }
         }
     }
@@ -462,14 +463,15 @@ pub(super) fn draw_head_markings(p: &Pen, sp: Species, sk: &Skin, head: Matrix3x
             }
         }
         Species::RedPanda => {
-            p.fill_el(head, 0.0, 0.18, 0.21, 0.14, sk.cream, 1.0);
+            // Soft rounded cream muzzle + puffy cream cheeks + bright eyebrow beans + dainty chestnut tear marks.
+            p.fill_el(head, 0.0, 0.19, 0.22, 0.145, sk.cream, 1.0);
             for side in [-1.0f32, 1.0] {
-                let cm = p.clip(if side < 0.0 { "sp_rp_cl" } else { "sp_rp_cr" }, hg, |p| p.ellipse_geo(0.33 * side, 0.13, 0.17, 0.115))?;
+                let cm = p.clip(if side < 0.0 { "sp_rp_cl" } else { "sp_rp_cr" }, hg, |p| p.ellipse_geo(0.34 * side, 0.135, 0.18, 0.125))?;
                 p.fill(head, &cm, sk.cream, 1.0);
-                p.fill_el(rot(11.0 * side, 0.155 * side, -0.095) * head, 0.155 * side, -0.095, 0.052, 0.034, sk.cream, 1.0);
+                p.fill_el(rot(12.0 * side, 0.16 * side, -0.095) * head, 0.16 * side, -0.095, 0.058, 0.038, sk.cream, 1.0);
                 if !p.small {
-                    let tear = mix(sk.fur, INK, 0.38);
-                    p.fill_el(rot(-9.0 * side, 0.18 * side, 0.17) * head, 0.18 * side, 0.17, 0.034, 0.068, tear, 0.9);
+                    let tear = mix(sk.fur, INK, 0.44);
+                    p.fill_el(rot(-10.0 * side, 0.195 * side, 0.165) * head, 0.195 * side, 0.165, 0.030, 0.056, tear, 0.85);
                 }
             }
         }
