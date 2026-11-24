@@ -351,6 +351,13 @@ fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 }
 
+/// Steps through `0` (None) plus all accessories belonging to `slot`.
+fn step_slot(cur: usize, d: i64, slot: mascot::AccSlot) -> usize {
+    let list: Vec<usize> = std::iter::once(0).chain((1..mascot::ACCESSORIES.len()).filter(|&i| mascot::acc_slot(i) == slot)).collect();
+    let idx = list.iter().position(|&v| v == cur).unwrap_or(0);
+    list[(idx as i64 + d).rem_euclid(list.len() as i64) as usize]
+}
+
 /// A random number below `n` from the clock (good enough for "surprise me").
 fn random_below(seed: u64, n: usize) -> usize {
     let mut x = seed | 1;
@@ -403,10 +410,12 @@ enum Item {
     ColorRow(&'static str, ColorTarget),
     /// Big live preview of the fox with skin and accessory pickers.
     Hero,
-    /// Skins / Accessories / Options tabs of the character screen.
+    /// Species / Skins / Head / Gear / Options tabs of the character screen.
     Tabs,
+    SpeciesGrid,
     SkinGrid,
     AccGrid,
+    GearGrid,
     MascotCard,
     Text(String),
     Row(&'static str, String),
@@ -453,11 +462,15 @@ enum Act {
     RestoreColors,
     ResetPosition,
     ResetDesk,
+    Species(usize),
     Skin(usize),
     Acc(usize),
+    Acc2(usize),
     Tab(usize),
+    StepSpecies(i64),
     StepSkin(i64),
     StepAcc(i64),
+    StepAcc2(i64),
     Random,
     OpenFolder,
     Focus(Field),
@@ -486,7 +499,6 @@ struct Fonts {
     value: IDWriteTextFormat,
     field: IDWriteTextFormat,
     card_name: IDWriteTextFormat,
-    name_c: IDWriteTextFormat,
     tab: IDWriteTextFormat,
     small_c: IDWriteTextFormat,
     big: IDWriteTextFormat,
@@ -708,7 +720,6 @@ impl SettingsWindow {
                 value: format(&dw, text, 15.0, normal, r)?,
                 field: format(&dw, text, 15.5, normal, l)?,
                 card_name: format(&dw, text, 15.5, semi, c)?,
-                name_c: format(&dw, text, 21.0, semi, c)?,
                 tab: format(&dw, text, 16.0, semi, c)?,
                 small_c: format(&dw, text, 13.5, normal, c)?,
                 big: format(&dw, text, 21.0, semi, l)?,
@@ -812,8 +823,10 @@ impl SettingsWindow {
             PAGE_CUSTOMIZE => {
                 let mut v = vec![Hero, Tabs];
                 match self.tab {
-                    0 => v.push(SkinGrid),
-                    1 => v.push(AccGrid),
+                    0 => v.push(SpeciesGrid),
+                    1 => v.push(SkinGrid),
+                    2 => v.push(AccGrid),
+                    3 => v.push(GearGrid),
                     _ => v.extend([
                         Section("MASCOT"),
                         Toggle("Mascot", Key::ShowMascot),
@@ -1069,14 +1082,15 @@ impl SettingsWindow {
         unsafe {
             rt.PushAxisAlignedClip(&D2D_RECT_F { left: 0.0, top: 0.0, right: 76.0, bottom: 96.0 }, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         }
-        let r = mascot::draw(rt, &self.factory, s.skin, s.acc, 44.0, 56.0, 42.0, 1.0, false, self.time());
+        let look = mascot::Look::new(s.species, s.skin, s.acc, s.acc2);
+        let r = mascot::draw(rt, &self.factory, look, 44.0, 56.0, 42.0, 1.0, false, self.time());
         unsafe {
             rt.PopAxisAlignedClip();
         }
         r
     }
 
-    /// The moving part of the Customize stage: bokeh drifting up, and the fox.
+    /// The moving part of the Customize stage: bokeh drifting up, and the mascot.
     fn stage_live(&self, rt: &ID2D1RenderTarget, s: &Settings, stage: D2D_RECT_F) -> Result<()> {
         let t = self.time();
         let (sw, sh) = (stage.right - stage.left, stage.bottom - stage.top);
@@ -1093,7 +1107,8 @@ impl SettingsWindow {
             }
         }
         let size = 158.0;
-        mascot::draw(rt, &self.factory, s.skin, s.acc, sx, floor - 0.47 * size, size, 1.0, false, t)
+        let look = mascot::Look::new(s.species, s.skin, s.acc, s.acc2);
+        mascot::draw(rt, &self.factory, look, sx, floor - 0.47 * size, size, 1.0, false, t)
     }
 
     fn set_frame(&mut self, ms: u32) {
@@ -1503,21 +1518,32 @@ impl SettingsWindow {
             }
             Item::Hero => self.hero(rt, s, y, accent)?,
             Item::Tabs => self.tabs(rt, y, accent)?,
+            Item::SpeciesGrid => self.species_grid(rt, s, y, accent)?,
             Item::SkinGrid => self.grid(rt, s, y, 0, accent)?,
             Item::AccGrid => self.grid(rt, s, y, 1, accent)?,
+            Item::GearGrid => self.grid(rt, s, y, 2, accent)?,
             Item::MascotCard => {
                 let r = D2D_RECT_F { left: LEFT, top: y + 8.0, right: RIGHT, bottom: y + 128.0 };
                 Self::rounded(rt, r, 18.0, CARD, 1.0)?;
                 unsafe {
                     rt.PushAxisAlignedClip(&r, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 }
-                mascot::draw_still(rt, &self.factory, s.skin, s.acc, LEFT + 80.0, y + 76.0, 80.0, 1.0, false, self.blink())?;
+                let look = mascot::Look::new(s.species, s.skin, s.acc, s.acc2);
+                mascot::draw_still(rt, &self.factory, look, LEFT + 80.0, y + 76.0, 80.0, 1.0, false, self.blink())?;
                 unsafe {
                     rt.PopAxisAlignedClip();
                 }
+                let sp = mascot::species_get(s.species);
                 let skin = mascot::get(s.skin);
-                Self::text(rt, skin.name, &self.f.big, D2D_RECT_F { left: LEFT + 160.0, top: y + 40.0, right: RIGHT, bottom: y + 68.0 }, FG)?;
-                let sub = if s.acc % mascot::ACCESSORIES.len() == 0 { "Your fox".to_string() } else { format!("Your fox  \u{00B7}  {}", mascot::acc_name(s.acc)) };
+                Self::text(rt, &format!("{}  \u{00B7}  {}", sp.name, skin.name), &self.f.big, D2D_RECT_F { left: LEFT + 160.0, top: y + 40.0, right: RIGHT, bottom: y + 68.0 }, FG)?;
+                let mut parts: Vec<&str> = Vec::new();
+                if s.acc % mascot::ACCESSORIES.len() != 0 {
+                    parts.push(mascot::acc_name(s.acc));
+                }
+                if s.acc2 % mascot::ACCESSORIES.len() != 0 && s.acc2 != s.acc {
+                    parts.push(mascot::acc_name(s.acc2));
+                }
+                let sub = if parts.is_empty() { "Your desktop buddy".to_string() } else { parts.join("  \u{00B7}  ") };
                 Self::text(rt, &sub, &self.f.text, D2D_RECT_F { left: LEFT + 160.0, top: y + 68.0, right: RIGHT, bottom: y + 92.0 }, DIM)?;
                 y + 136.0
             }
@@ -1675,23 +1701,21 @@ impl SettingsWindow {
         }
     }
 
-    /// Character screen: a stage with the big animated fox, and pickers beside it.
+    /// Character screen: a stage with the big animated mascot, and pickers beside it.
     fn hero(&mut self, rt: &ID2D1RenderTarget, s: &Settings, y: f32, accent: [f32; 3]) -> Result<f32> {
-        let r = D2D_RECT_F { left: LEFT, top: y + 8.0, right: RIGHT, bottom: y + 318.0 };
+        let r = D2D_RECT_F { left: LEFT, top: y + 8.0, right: RIGHT, bottom: y + 382.0 };
         Self::rounded(rt, r, 18.0, CARD, 1.0)?;
-        let stage = D2D_RECT_F { left: r.left + 12.0, top: r.top + 12.0, right: r.left + 300.0, bottom: r.bottom - 12.0 };
+        let stage = D2D_RECT_F { left: r.left + 12.0, top: r.top + 12.0, right: r.left + 292.0, bottom: r.bottom - 12.0 };
         let sx = (stage.left + stage.right) / 2.0;
-        let floor = stage.bottom - 30.0;
+        let floor = stage.bottom - 38.0;
         unsafe {
             let glow = self.radial(rt, sx, floor - 110.0, 200.0, 180.0, &[(0.0, mix3(accent, CARD, 0.45), 1.0), (0.6, mix3(accent, BG, 0.82), 1.0), (1.0, SIDE_BG, 1.0)])?;
             rt.FillRoundedRectangle(&D2D1_ROUNDED_RECT { rect: stage, radiusX: 14.0, radiusY: 14.0 }, &glow);
             rt.PushAxisAlignedClip(&stage, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-            // Floor: a spotlight and a soft shadow under the paws.
             let spot = self.radial(rt, sx, floor, 120.0, 22.0, &[(0.0, accent, 0.28), (1.0, accent, 0.0)])?;
             rt.FillEllipse(&ellipse(D2D_RECT_F { left: sx - 120.0, top: floor - 22.0, right: sx + 120.0, bottom: floor + 22.0 }), &spot);
             let shadow = self.radial(rt, sx, floor, 70.0, 10.0, &[(0.0, [0.0; 3], 0.45), (1.0, [0.0; 3], 0.0)])?;
             rt.FillEllipse(&ellipse(D2D_RECT_F { left: sx - 70.0, top: floor - 10.0, right: sx + 70.0, bottom: floor + 10.0 }), &shadow);
-            // The bokeh and the fox move: drawn over the cached page every frame.
             if self.skip_live {
                 self.stage = Some(stage);
             } else {
@@ -1700,25 +1724,24 @@ impl SettingsWindow {
             rt.PopAxisAlignedClip();
         }
 
-        // Pickers.
-        let (px, pr) = (stage.right + 22.0, r.right - 22.0);
+        // Compact 4-slot pickers: Species, Skin, Head, Gear.
+        let (px, pr) = (stage.right + 18.0, r.right - 18.0);
+        let sp = mascot::species_get(s.species);
+        self.selector_compact(rt, "SPECIES", sp.name, px, pr, r.top + 16.0, Act::StepSpecies(-1), Act::StepSpecies(1), accent)?;
+
         let skin = mascot::get(s.skin);
-        let (ns, na) = (mascot::SKINS.len(), mascot::ACCESSORIES.len());
-        let pack = mascot::skin_pack(s.skin);
-        let sub = format!("{}  \u{00B7}  {} / {}  \u{00B7}  {}", pack.name, s.skin % ns - pack.skins.start + 1, pack.skins.len(), skin.tags());
-        self.selector(rt, "SKIN", skin.name, &sub, px, pr, r.top + 22.0, Act::StepSkin(-1), Act::StepSkin(1), accent)?;
-        let (aname, moving) = mascot::ACCESSORIES[s.acc % na];
-        let sub = if s.acc % na == 0 {
-            "No accessory".to_string()
-        } else {
-            let pack = mascot::acc_pack(s.acc);
-            format!("{}  \u{00B7}  {} / {}{}", pack.name, s.acc % na - pack.accs.start + 1, pack.accs.len(), if moving { "  \u{00B7}  Animated" } else { "" })
-        };
-        self.selector(rt, "ACCESSORY", aname, &sub, px, pr, r.top + 122.0, Act::StepAcc(-1), Act::StepAcc(1), accent)?;
+        self.selector_compact(rt, "SKIN", skin.name, px, pr, r.top + 88.0, Act::StepSkin(-1), Act::StepSkin(1), accent)?;
+
+        let na = mascot::ACCESSORIES.len();
+        let head_name = mascot::ACCESSORIES[s.acc % na].0;
+        self.selector_compact(rt, "HEAD", head_name, px, pr, r.top + 160.0, Act::StepAcc(-1), Act::StepAcc(1), accent)?;
+
+        let gear_name = mascot::ACCESSORIES[s.acc2 % na].0;
+        self.selector_compact(rt, "GEAR", gear_name, px, pr, r.top + 232.0, Act::StepAcc2(-1), Act::StepAcc2(1), accent)?;
 
         let hot = self.hv(Act::Random);
         let lift = 2.0 * hot;
-        let b = D2D_RECT_F { left: px, top: r.bottom - 66.0 - lift, right: pr, bottom: r.bottom - 22.0 - lift };
+        let b = D2D_RECT_F { left: px, top: r.bottom - 58.0 - lift, right: pr, bottom: r.bottom - 16.0 - lift };
         Self::rounded(rt, b, 12.0, accent, 0.85 + 0.15 * hot)?;
         let f = self.fl(Act::Random);
         if f > 0.0 {
@@ -1728,36 +1751,41 @@ impl SettingsWindow {
         Self::text(rt, "\u{E8B1}", &self.f.icon, D2D_RECT_F { left: b.left + 18.0, right: b.left + 44.0, ..b }, fg)?;
         Self::text(rt, "Surprise me", &self.f.tab, D2D_RECT_F { left: b.left + 20.0, ..b }, fg)?;
         self.hits.push((b, Act::Random));
-        Ok(y + 326.0)
+        Ok(y + 390.0)
     }
 
-    /// "LABEL" over a ‹ name › stepper and a small caption.
+    /// Compact "LABEL" over a ‹ name › stepper.
     #[allow(clippy::too_many_arguments)]
-    fn selector(&mut self, rt: &ID2D1RenderTarget, label: &str, name: &str, sub: &str, px: f32, pr: f32, top: f32, prev: Act, next: Act, accent: [f32; 3]) -> Result<()> {
-        Self::text(rt, label, &self.f.stat_label, D2D_RECT_F { left: px + 2.0, top, right: pr, bottom: top + 20.0 }, accent)?;
-        let row = D2D_RECT_F { left: px, top: top + 26.0, right: pr, bottom: top + 72.0 };
-        Self::rounded(rt, row, 12.0, FIELD, 1.0)?;
+    fn selector_compact(&mut self, rt: &ID2D1RenderTarget, label: &str, name: &str, px: f32, pr: f32, top: f32, prev: Act, next: Act, accent: [f32; 3]) -> Result<()> {
+        Self::text(rt, label, &self.f.stat_label, D2D_RECT_F { left: px + 2.0, top, right: pr, bottom: top + 18.0 }, accent)?;
+        let row = D2D_RECT_F { left: px, top: top + 21.0, right: pr, bottom: top + 61.0 };
+        Self::rounded(rt, row, 11.0, FIELD, 1.0)?;
         for (i, act) in [prev, next].into_iter().enumerate() {
-            let x = if i == 0 { row.left + 5.0 } else { row.right - 41.0 };
-            let b = D2D_RECT_F { left: x, top: row.top + 5.0, right: x + 36.0, bottom: row.bottom - 5.0 };
-            Self::rounded(rt, b, 9.0, FG, 0.05 + 0.09 * self.hv(act))?;
+            let x = if i == 0 { row.left + 4.0 } else { row.right - 36.0 };
+            let b = D2D_RECT_F { left: x, top: row.top + 4.0, right: x + 32.0, bottom: row.bottom - 4.0 };
+            Self::rounded(rt, b, 8.0, FG, 0.05 + 0.09 * self.hv(act))?;
             let f = self.fl(act);
             if f > 0.0 {
-                Self::rounded(rt, b, 9.0, accent, 0.6 * f)?;
+                Self::rounded(rt, b, 8.0, accent, 0.6 * f)?;
             }
             Self::text(rt, if i == 0 { "\u{E76B}" } else { "\u{E76C}" }, &self.f.icon, b, FG)?;
             self.hits.push((b, act));
         }
-        Self::text(rt, name, &self.f.name_c, D2D_RECT_F { left: row.left + 42.0, right: row.right - 42.0, ..row }, FG)?;
-        Self::text(rt, sub, &self.f.small_c, D2D_RECT_F { left: px, top: row.bottom + 4.0, right: pr, bottom: row.bottom + 24.0 }, DIM)?;
+        Self::text(rt, name, &self.f.tab, D2D_RECT_F { left: row.left + 38.0, right: row.right - 38.0, ..row }, FG)?;
         Ok(())
     }
 
     fn tabs(&mut self, rt: &ID2D1RenderTarget, y: f32, accent: [f32; 3]) -> Result<f32> {
         let bx = D2D_RECT_F { left: LEFT, top: y + 14.0, right: RIGHT, bottom: y + 62.0 };
         Self::rounded(rt, bx, 13.0, FIELD, 1.0)?;
-        let labels = [format!("Skins  {}", mascot::SKINS.len()), format!("Accessories  {}", mascot::ACCESSORIES.len() - 1), "Options".to_string()];
-        let per = (bx.right - bx.left - 8.0) / 3.0;
+        let labels = [
+            format!("Species {}", mascot::SPECIES.len()),
+            format!("Skins {}", mascot::SKINS.len()),
+            format!("Head {}", mascot::acc_count(mascot::AccSlot::Head)),
+            format!("Gear {}", mascot::acc_count(mascot::AccSlot::Gear)),
+            "Options".to_string(),
+        ];
+        let per = (bx.right - bx.left - 8.0) / labels.len() as f32;
         let slot = |f: f32| D2D_RECT_F { left: bx.left + 4.0 + per * f, top: bx.top + 4.0, right: bx.left + 4.0 + per * (f + 1.0), bottom: bx.bottom - 4.0 };
         for i in 0..labels.len() {
             let hot = self.hv(Act::Tab(i));
@@ -1765,31 +1793,83 @@ impl SettingsWindow {
                 Self::rounded(rt, slot(i as f32), 10.0, FG, 0.07 * hot)?;
             }
         }
-        let pos = self.tab_pos.clamp(0.0, 2.0);
+        let pos = self.tab_pos.clamp(0.0, (labels.len() - 1) as f32);
         Self::rounded(rt, slot(pos), 10.0, accent, 1.0)?;
         let on_accent = if luminance(accent) > 0.6 { [0.08; 3] } else { [1.0; 3] };
         for (i, l) in labels.iter().enumerate() {
             let r = slot(i as f32);
             let near = (1.0 - (i as f32 - pos).abs()).clamp(0.0, 1.0);
-            Self::text(rt, l, &self.f.tab, r, mix(NAV, on_accent, near))?;
+            Self::text(rt, l, &self.f.card_name, r, mix(NAV, on_accent, near))?;
             self.hits.push((r, Act::Tab(i)));
         }
         Ok(y + 70.0)
     }
 
-    /// Cards for every skin (`tab` 0) or accessory (`tab` 1), each with a live
-    /// fox, grouped by pack under a heading per pack.
+    /// Cards for every animal species.
+    fn species_grid(&mut self, rt: &ID2D1RenderTarget, s: &Settings, y: f32, accent: [f32; 3]) -> Result<f32> {
+        let count = mascot::SPECIES.len();
+        let (cols, gap, ch) = (3usize, 14.0, 188.0);
+        let cw = (RIGHT - LEFT - gap * (cols - 1) as f32) / cols as f32;
+        let top0 = y + 14.0;
+        for (i, sp) in mascot::SPECIES.iter().enumerate() {
+            let (col, row) = ((i % cols) as f32, (i / cols) as f32);
+            let (l, top) = (LEFT + col * (cw + gap), top0 + row * (ch + gap));
+            if top + ch < 0.0 || top > WIN_H {
+                continue;
+            }
+            let act = Act::Species(i);
+            let h = self.hv(act);
+            let lift = 3.0 * h;
+            let r = D2D_RECT_F { left: l, top: top - lift, right: l + cw, bottom: top + ch - lift };
+            let selected = i == s.species % count;
+            Self::rounded(rt, r, 16.0, CARD, 1.0)?;
+            if h > 0.01 {
+                Self::rounded(rt, r, 16.0, FG, 0.05 * h)?;
+            }
+            let (cx, cy) = ((r.left + r.right) / 2.0, r.top + 82.0);
+            unsafe {
+                rt.PushAxisAlignedClip(&r, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                if selected || h > 0.01 {
+                    let a = if selected { 0.4 } else { 0.22 * h };
+                    let g = self.radial(rt, cx, cy, 76.0, 68.0, &[(0.0, accent, 1.0), (1.0, accent, 0.0)])?;
+                    g.SetOpacity(a);
+                    rt.FillEllipse(&ellipse(D2D_RECT_F { left: cx - 76.0, top: cy - 68.0, right: cx + 76.0, bottom: cy + 68.0 }), &g);
+                }
+                let look = mascot::Look::new(i, s.skin, s.acc, s.acc2);
+                mascot::draw_still(rt, &self.factory, look, cx, cy + 6.0, 78.0 + 8.0 * h, 1.0, false, self.blink())?;
+                rt.PopAxisAlignedClip();
+                if selected {
+                    rt.DrawRoundedRectangle(&D2D1_ROUNDED_RECT { rect: r, radiusX: 16.0, radiusY: 16.0 }, &Self::brush(rt, accent, 1.0)?, 2.5, None);
+                    let c = D2D_RECT_F { left: r.right - 30.0, top: r.top + 8.0, right: r.right - 8.0, bottom: r.top + 30.0 };
+                    rt.FillEllipse(&ellipse(c), &Self::brush(rt, accent, 1.0)?);
+                    Self::text(rt, "\u{E73E}", &self.f.icon, c, if luminance(accent) > 0.6 { [0.08; 3] } else { [1.0; 3] })?;
+                } else if h > 0.01 {
+                    rt.DrawRoundedRectangle(&D2D1_ROUNDED_RECT { rect: r, radiusX: 16.0, radiusY: 16.0 }, &Self::brush(rt, FG, 0.18 * h)?, 1.5, None);
+                }
+            }
+            Self::text(rt, sp.name, &self.f.card_name, D2D_RECT_F { left: r.left + 6.0, top: r.bottom - 50.0, right: r.right - 6.0, bottom: r.bottom - 26.0 }, if selected { FG } else { NAV })?;
+            Self::text(rt, sp.tag, &self.f.small_c, D2D_RECT_F { left: r.left + 6.0, top: r.bottom - 28.0, right: r.right - 6.0, bottom: r.bottom - 8.0 }, DIM)?;
+            self.hits.push((r, act));
+        }
+        Ok(top0 + count.div_ceil(cols) as f32 * (ch + gap) + 8.0)
+    }
+
+    /// Cards for every skin (`tab` 0), head accessory (`tab` 1), or gear accessory (`tab` 2),
+    /// grouped by pack under a heading per pack.
     fn grid(&mut self, rt: &ID2D1RenderTarget, s: &Settings, y: f32, tab: usize, accent: [f32; 3]) -> Result<f32> {
         let (ns, na) = (mascot::SKINS.len(), mascot::ACCESSORIES.len());
         let (cols, gap, ch, head) = (4usize, 14.0, 172.0, 40.0);
         let cw = (RIGHT - LEFT - gap * (cols - 1) as f32) / cols as f32;
-        // Each card's slot: the pack's heading comes first, then its cards.
+        let want_slot = if tab == 1 { mascot::AccSlot::Head } else { mascot::AccSlot::Gear };
         let mut slots: Vec<(usize, f32, f32)> = Vec::new();
         let mut top = y + 10.0;
         for (pi, pack) in mascot::PACKS.iter().enumerate() {
-            let mut items: Vec<usize> = if tab == 0 { pack.skins.clone().collect() } else { pack.accs.clone().collect() };
-            // "None" leads the first pack's accessories.
-            if tab == 1 && pi == 0 {
+            let mut items: Vec<usize> = if tab == 0 {
+                pack.skins.clone().collect()
+            } else {
+                pack.accs.clone().filter(|&i| mascot::acc_slot(i) == want_slot).collect()
+            };
+            if tab != 0 && pi == 0 {
                 items.insert(0, 0);
             }
             if items.is_empty() {
@@ -1812,10 +1892,15 @@ impl SettingsWindow {
             if top + ch < 0.0 || top > WIN_H {
                 continue;
             }
-            let h = self.hv(if tab == 0 { Act::Skin(i) } else { Act::Acc(i) });
+            let act = match tab { 0 => Act::Skin(i), 1 => Act::Acc(i), _ => Act::Acc2(i) };
+            let h = self.hv(act);
             let lift = 3.0 * h;
             let r = D2D_RECT_F { left: l, top: top - lift, right: l + cw, bottom: top + ch - lift };
-            let selected = if tab == 0 { i == s.skin % ns } else { i == s.acc % na };
+            let selected = match tab {
+                0 => i == s.skin % ns,
+                1 => i == s.acc % na,
+                _ => i == s.acc2 % na,
+            };
             Self::rounded(rt, r, 16.0, CARD, 1.0)?;
             if h > 0.01 {
                 Self::rounded(rt, r, 16.0, FG, 0.05 * h)?;
@@ -1829,8 +1914,12 @@ impl SettingsWindow {
                     g.SetOpacity(a);
                     rt.FillEllipse(&ellipse(D2D_RECT_F { left: cx - 70.0, top: cy - 64.0, right: cx + 70.0, bottom: cy + 64.0 }), &g);
                 }
-                let (skin, acc) = if tab == 0 { (i, s.acc) } else { (s.skin, i) };
-                mascot::draw_still(rt, &self.factory, skin, acc, cx, cy + 6.0, 72.0 + 8.0 * h, 1.0, false, self.blink())?;
+                let look = match tab {
+                    0 => mascot::Look::new(s.species, i, s.acc, s.acc2),
+                    1 => mascot::Look::new(s.species, s.skin, i, s.acc2),
+                    _ => mascot::Look::new(s.species, s.skin, s.acc, i),
+                };
+                mascot::draw_still(rt, &self.factory, look, cx, cy + 6.0, 72.0 + 8.0 * h, 1.0, false, self.blink())?;
                 rt.PopAxisAlignedClip();
                 if selected {
                     rt.DrawRoundedRectangle(&D2D1_ROUNDED_RECT { rect: r, radiusX: 16.0, radiusY: 16.0 }, &Self::brush(rt, accent, 1.0)?, 2.5, None);
@@ -1841,8 +1930,7 @@ impl SettingsWindow {
                     rt.DrawRoundedRectangle(&D2D1_ROUNDED_RECT { rect: r, radiusX: 16.0, radiusY: 16.0 }, &Self::brush(rt, FG, 0.18 * h)?, 1.5, None);
                 }
             }
-            // A picked card: a ring pulses out from it.
-            let f = self.fl(if tab == 0 { Act::Skin(i) } else { Act::Acc(i) });
+            let f = self.fl(act);
             if f > 0.0 {
                 let g = 7.0 * (1.0 - f);
                 let pr = D2D_RECT_F { left: r.left - g, top: r.top - g, right: r.right + g, bottom: r.bottom + g };
@@ -1854,7 +1942,7 @@ impl SettingsWindow {
             }
             let nr = D2D_RECT_F { left: r.left + 6.0, top: r.bottom - 36.0, right: r.right - 6.0, bottom: r.bottom - 12.0 };
             Self::text(rt, name, &self.f.card_name, nr, if selected { FG } else { NAV })?;
-            self.hits.push((r, if tab == 0 { Act::Skin(i) } else { Act::Acc(i) }));
+            self.hits.push((r, act));
         }
         Ok(end)
     }
@@ -2144,8 +2232,10 @@ impl SettingsWindow {
                 s.custom_y = -1;
             }),
             Act::ResetDesk => crate::deskfox::reset_position(),
+            Act::Species(k) => window::change_setting(Key::Skin, |s| s.species = k),
             Act::Skin(k) => window::change_setting(Key::Skin, |s| s.skin = k),
             Act::Acc(k) => window::change_setting(Key::Skin, |s| s.acc = k),
+            Act::Acc2(k) => window::change_setting(Key::Skin, |s| s.acc2 = k),
             Act::Tab(k) => {
                 if k != self.tab {
                     self.tab = k;
@@ -2153,15 +2243,21 @@ impl SettingsWindow {
                     self.kick();
                 }
             }
+            Act::StepSpecies(d) => window::change_setting(Key::Skin, |s| s.species = (s.species as i64 + d).rem_euclid(mascot::SPECIES.len() as i64) as usize),
             Act::StepSkin(d) => window::change_setting(Key::Skin, |s| s.skin = (s.skin as i64 + d).rem_euclid(mascot::SKINS.len() as i64) as usize),
-            Act::StepAcc(d) => window::change_setting(Key::Skin, |s| s.acc = (s.acc as i64 + d).rem_euclid(mascot::ACCESSORIES.len() as i64) as usize),
+            Act::StepAcc(d) => window::change_setting(Key::Skin, |s| s.acc = step_slot(s.acc, d, mascot::AccSlot::Head)),
+            Act::StepAcc2(d) => window::change_setting(Key::Skin, |s| s.acc2 = step_slot(s.acc2, d, mascot::AccSlot::Gear)),
             Act::Random => {
                 let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(7);
                 window::change_setting(Key::Skin, |s| {
-                    let (ns, na) = (mascot::SKINS.len(), mascot::ACCESSORIES.len());
-                    // Always land on something new.
+                    let nsp = mascot::SPECIES.len();
+                    let ns = mascot::SKINS.len();
+                    let heads: Vec<usize> = std::iter::once(0).chain((1..mascot::ACCESSORIES.len()).filter(|&i| mascot::acc_slot(i) == mascot::AccSlot::Head)).collect();
+                    let gears: Vec<usize> = std::iter::once(0).chain((1..mascot::ACCESSORIES.len()).filter(|&i| mascot::acc_slot(i) == mascot::AccSlot::Gear)).collect();
+                    s.species = (s.species % nsp + 1 + random_below(seed / 31, nsp - 1)) % nsp;
                     s.skin = (s.skin % ns + 1 + random_below(seed, ns - 1)) % ns;
-                    s.acc = (s.acc % na + 1 + random_below(seed / 977, na - 1)) % na;
+                    s.acc = heads[random_below(seed / 977, heads.len())];
+                    s.acc2 = gears[random_below(seed / 3571, gears.len())];
                 });
             }
             Act::OpenFolder => window::open_data_folder(),

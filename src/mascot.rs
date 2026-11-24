@@ -21,6 +21,49 @@ use windows_numerics::{Matrix3x2, Vector2};
 use crate::render::{luminance, rgba};
 
 mod shinobi;
+pub mod species;
+
+pub use species::{Species, SpeciesInfo, SPECIES};
+
+/// Complete visual identity of a mascot: species, skin, head accessory, and body/gear accessory.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Look {
+    pub species: usize,
+    pub skin: usize,
+    pub acc: usize,
+    pub acc2: usize,
+}
+
+impl Look {
+    pub const fn new(species: usize, skin: usize, acc: usize, acc2: usize) -> Self {
+        Self { species, skin, acc, acc2 }
+    }
+}
+
+pub fn species_get(i: usize) -> &'static SpeciesInfo {
+    species::get(i)
+}
+
+/// Which accessory slot an item belongs to (Bongo Cat-style dual slots).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AccSlot {
+    /// Hats, headbands, glasses, horns, crowns, masks and face marks.
+    Head,
+    /// Wings, cloaks, scarves, rings, armor, scrolls and floating gear.
+    Gear,
+}
+
+/// Classifies each accessory index into Head or Gear (index 0 "None" fits either).
+pub fn acc_slot(i: usize) -> AccSlot {
+    match i % ACCESSORIES.len() {
+        8 | 9 | 13 | 16 | 28 | 30 | 31 | 33 | 34 | 36 | 37 | 38 => AccSlot::Gear,
+        _ => AccSlot::Head,
+    }
+}
+
+pub fn acc_count(slot: AccSlot) -> usize {
+    (1..ACCESSORIES.len()).filter(|&i| acc_slot(i) == slot).count()
+}
 
 type Rgb = [f32; 3];
 
@@ -82,19 +125,6 @@ pub enum Eye {
     Beast,
     /// Only the right eye (as seen) has the commas.
     OneTomoe,
-}
-
-impl Eye {
-    fn label(self) -> &'static str {
-        match self {
-            Eye::Normal => "",
-            Eye::Tomoe | Eye::OneTomoe => "Tomoe",
-            Eye::Pinwheel => "Pinwheel",
-            Eye::Petals => "Petal eyes",
-            Eye::Ripple => "Ripple",
-            Eye::Beast => "Beast eyes",
-        }
-    }
 }
 
 /// Hair worn on the head (see `shinobi.rs` for the shapes).
@@ -161,25 +191,6 @@ pub struct Skin {
 }
 
 impl Skin {
-    /// Short description for the character screen, e.g. "Stripes · Embers".
-    pub fn tags(&self) -> String {
-        let mut v = Vec::new();
-        if self.pattern != Pattern::Plain {
-            v.push(format!("{:?}", self.pattern));
-        }
-        if self.eye != Eye::Normal {
-            v.push(self.eye.label().to_string());
-        }
-        if self.fx != Fx::None {
-            v.push(format!("{:?}", self.fx));
-        }
-        if v.is_empty() {
-            "Classic".into()
-        } else {
-            v.join(" \u{00B7} ")
-        }
-    }
-
     pub fn animated(&self) -> bool {
         self.fx != Fx::None || self.pattern == Pattern::Galaxy || !matches!(self.eye, Eye::Normal | Eye::Beast)
     }
@@ -312,18 +323,6 @@ pub const PACKS: &[Pack] = &[
 
 /// The first shinobi skin.
 const SHINOBI_SKIN: usize = 49;
-
-/// The pack a skin belongs to.
-pub fn skin_pack(i: usize) -> &'static Pack {
-    let i = i % SKINS.len();
-    PACKS.iter().find(|p| p.skins.contains(&i)).unwrap_or(&PACKS[0])
-}
-
-/// The pack an accessory belongs to ("None" counts as the first pack).
-pub fn acc_pack(i: usize) -> &'static Pack {
-    let i = i % ACCESSORIES.len();
-    PACKS.iter().find(|p| p.accs.contains(&i)).unwrap_or(&PACKS[0])
-}
 
 pub fn get(i: usize) -> &'static Skin {
     &SKINS[i % SKINS.len()]
@@ -475,14 +474,14 @@ fn spring() -> Vec<S> {
     v
 }
 
-const HEAD: &[S] = &[M(0.0, -0.31), B(0.20, -0.31, 0.38, -0.25, 0.42, -0.07), B(0.45, 0.03, 0.52, 0.10, 0.56, 0.15), B(0.47, 0.18, 0.44, 0.21, 0.40, 0.25), B(0.30, 0.35, 0.15, 0.385, 0.0, 0.385)];
-const CREAM: &[S] = &[M(0.0, 0.03), B(0.08, -0.04, 0.20, -0.02, 0.30, 0.06), B(0.40, 0.12, 0.50, 0.135, 0.56, 0.15), B(0.47, 0.18, 0.44, 0.21, 0.40, 0.25), B(0.30, 0.35, 0.15, 0.385, 0.0, 0.385)];
-const EAR: &[S] = &[M(0.09, -0.21), B(0.15, -0.40, 0.27, -0.55, 0.35, -0.60), B(0.42, -0.58, 0.455, -0.40, 0.445, -0.07), Z];
-const EAR_IN: &[S] = &[M(0.165, -0.235), B(0.21, -0.36, 0.28, -0.47, 0.335, -0.505), B(0.38, -0.47, 0.395, -0.35, 0.39, -0.17), Z];
 const TAIL: &[S] = &[M(0.16, 0.40), B(0.42, 0.49, 0.67, 0.37, 0.68, 0.10), B(0.69, -0.02, 0.63, -0.10, 0.56, -0.13), B(0.58, 0.0, 0.52, 0.17, 0.28, 0.24), Z];
-const NOSE: &[S] = &[M(-0.048, 0.183), Q(0.0, 0.165, 0.048, 0.183), Q(0.035, 0.228, 0.0, 0.238), Q(-0.035, 0.228, -0.048, 0.183), Z];
-const MOUTH: &[S] = &[M(-0.075, 0.248), Q(-0.037, 0.292, 0.0, 0.245), Q(0.037, 0.292, 0.075, 0.248), O];
-const LID: &[S] = &[M(-0.068, -0.005), Q(0.0, 0.05, 0.068, -0.005), O];
+const NOSE: &[S] = &[M(-0.044, -0.014), Q(0.0, -0.024, 0.044, -0.014), Q(0.026, 0.022, 0.0, 0.026), Q(-0.026, 0.022, -0.044, -0.014), Z];
+const MOUTH: &[S] = &[M(-0.064, 0.0), Q(-0.032, 0.042, 0.0, -0.002), Q(0.032, 0.042, 0.064, 0.0), O];
+const MOUTH_HAPPY: &[S] = &[M(-0.068, -0.006), Q(-0.034, 0.046, 0.0, -0.002), Q(0.034, 0.046, 0.068, -0.006), O];
+const MOUTH_OPEN: &[S] = &[M(-0.072, -0.006), Q(-0.036, 0.015, 0.0, -0.004), Q(0.036, 0.015, 0.072, -0.006), Q(0.0, 0.078, -0.072, -0.006), Z];
+const LID: &[S] = &[M(-0.066, 0.004), Q(0.0, 0.066, 0.066, 0.004), O];
+const HAPPY_EYE: &[S] = &[M(-0.066, 0.022), Q(0.0, -0.058, 0.066, 0.022), O];
+const HAPPY_EYE_BIG: &[S] = &[M(-0.072, 0.028), Q(0.0, -0.076, 0.072, 0.028), O];
 const ZED: &[S] = &[M(-0.5, -0.5), L(0.5, -0.5), L(-0.5, 0.5), L(0.5, 0.5), O];
 const SPARK: &[S] = &[M(0.0, -1.0), Q(0.12, -0.12, 1.0, 0.0), Q(0.12, 0.12, 0.0, 1.0), Q(-0.12, 0.12, -1.0, 0.0), Q(-0.12, -0.12, 0.0, -1.0), Z];
 const HEART: &[S] = &[M(0.0, 0.42), B(-0.62, 0.0, -0.42, -0.62, 0.0, -0.25), B(0.42, -0.62, 0.62, 0.0, 0.0, 0.42), Z];
@@ -607,7 +606,7 @@ fn twitch(t: f32) -> (f32, f32) {
 struct Store {
     _factory: ID2D1Factory,
     stroke: ID2D1StrokeStyle,
-    shapes: RefCell<HashMap<&'static str, ID2D1Geometry>>,
+    shapes: RefCell<HashMap<(u8, &'static str), ID2D1Geometry>>,
 }
 
 thread_local! {
@@ -629,19 +628,39 @@ fn solid_for(rt: &ID2D1RenderTarget) -> Result<ID2D1SolidColorBrush> {
 }
 
 #[derive(Clone, Copy)]
-struct Bongo {
-    /// How far each paw (left, right) is tapped down, 0..1; None keeps them resting in front.
-    paws: Option<[f32; 2]>,
+pub struct BongoState {
+    /// How far each paw (left, right) is tapped down, 0..1.
+    pub paws: [f32; 2],
     /// Eyelids, 0 open .. 1 closed.
-    blink: f32,
+    pub blink: f32,
     /// Keeps the idle motions (breathing, tail, effects) running.
-    live: bool,
+    pub live: bool,
     /// Time for the floating "zZZ", which drifts even when the fox holds still.
-    zt: f32,
+    pub zt: f32,
     /// Draws the glows of skins and accessories.
+    pub glow: bool,
+    /// Low-pass smoothed body squash (0..1) on paw tap.
+    pub squash: f32,
+    /// Low-pass smoothed subtle head tilt (-1..1).
+    pub head_bob: f32,
+    /// Gentle tap ear bounce in degrees (left, right).
+    pub ear_bounce: [f32; 2],
+    /// Typing speed happiness (0..1; >0.38 warm ^ ^, >0.68 joyful open smile).
+    pub hype: f32,
+}
+
+#[derive(Clone, Copy)]
+struct Bongo {
+    paws: Option<[f32; 2]>,
+    blink: f32,
+    live: bool,
+    zt: f32,
     glow: bool,
-    /// Only the head: no tail, no paws (the app icon).
     head_only: bool,
+    squash: f32,
+    head_bob: f32,
+    ear_bounce: [f32; 2],
+    hype: f32,
 }
 
 /// The fox being drawn has its glows turned off.
@@ -650,51 +669,85 @@ fn glow_off() -> bool {
 }
 
 thread_local! {
-    // Set while the desktop fox draws: a still pose with only the eyes and paws moving.
+    // Set while the desktop mascot draws: pose, paws, squash, hype and eyes.
     static BONGO: std::cell::Cell<Option<Bongo>> = const { std::cell::Cell::new(None) };
-    // What [`fox`] draws: 1 the fox itself, 2 accessory parts behind it, 4 accessory parts on it.
+    // What [`fox`] draws: 1 the mascot itself, 2 accessory parts behind it, 4 accessory parts on it.
     static LAYERS: std::cell::Cell<u8> = const { std::cell::Cell::new(7) };
 }
 
-/// The desktop fox: holding still (no breathing, swaying, tail or effects in
-/// motion), paws raised Bongo Cat style. `paws` is how far each (left, right) is
-/// tapped down, `blink` how closed the eyes are; asleep it shows a still "zZZ".
+/// The desktop mascot: articulated Bongo Cat paws, smooth squash/ear bounce and hype smile.
 #[allow(clippy::too_many_arguments)]
-/// `live` keeps the skin and accessory animations running at time `t`; the
-/// "zZZ" always drifts with `t`.
-pub fn draw_bongo(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, acc: usize, cx: f32, cy: f32, size: f32, sleeping: bool, paws: [f32; 2], blink: f32, t: f32, live: bool, glow: bool) -> Result<()> {
-    BONGO.with(|c| c.set(Some(Bongo { paws: Some(paws), blink, live, zt: t, glow, head_only: false })));
-    let r = draw(rt, factory, skin, acc, cx, cy, size, 1.0, sleeping, t);
+pub fn draw_bongo(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx: f32, cy: f32, size: f32, sleeping: bool, st: BongoState) -> Result<()> {
+    BONGO.with(|c| {
+        c.set(Some(Bongo {
+            paws: Some(st.paws),
+            blink: st.blink,
+            live: st.live,
+            zt: st.zt,
+            glow: st.glow,
+            head_only: false,
+            squash: st.squash,
+            head_bob: st.head_bob,
+            ear_bounce: st.ear_bounce,
+            hype: st.hype,
+        }))
+    });
+    let r = draw(rt, factory, look, cx, cy, size, 1.0, sleeping, st.zt);
     BONGO.with(|c| c.set(None));
     r
 }
 
-/// The fox holding still in its usual pose (paws in front), with only the
-/// eyelids set from `blink`: drawing it costs one frame, not an animation.
-#[allow(clippy::too_many_arguments)]
 /// Just the head, still, no tail or paws (the app icon).
-pub fn draw_head(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, cx: f32, cy: f32, size: f32) -> Result<()> {
-    BONGO.with(|c| c.set(Some(Bongo { paws: None, blink: 0.0, live: false, zt: 0.0, glow: true, head_only: true })));
-    let r = draw(rt, factory, skin, 0, cx, cy, size, 1.0, false, 0.0);
+#[allow(clippy::too_many_arguments)]
+pub fn draw_head(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, species: usize, skin: usize, cx: f32, cy: f32, size: f32) -> Result<()> {
+    BONGO.with(|c| {
+        c.set(Some(Bongo {
+            paws: None,
+            blink: 0.0,
+            live: false,
+            zt: 0.0,
+            glow: true,
+            head_only: true,
+            squash: 0.0,
+            head_bob: 0.0,
+            ear_bounce: [0.0; 2],
+            hype: 0.0,
+        }))
+    });
+    let r = draw(rt, factory, Look::new(species, skin, 0, 0), cx, cy, size, 1.0, false, 0.0);
     BONGO.with(|c| c.set(None));
     r
 }
 
-/// One frame of the idle animation at `t` seconds, without the per-fox
-/// rhythm, drawing only `layers` (1 the fox, 2 accessory parts behind it,
+/// One frame of the idle animation at `t` seconds, without the per-mascot
+/// rhythm, drawing only `layers` (1 the mascot, 2 accessory parts behind it,
 /// 4 accessory parts on it). Used to export frames for the web page.
 #[allow(clippy::too_many_arguments)]
-pub fn draw_layers(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, acc: usize, cx: f32, cy: f32, size: f32, t: f32, layers: u8) -> Result<()> {
-    let phase = ((skin % SKINS.len()) as f32 * 0.618 + (acc % ACCESSORIES.len()) as f32 * 0.377).fract() * 11.0;
+pub fn draw_layers(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx: f32, cy: f32, size: f32, t: f32, layers: u8) -> Result<()> {
+    let phase = ((look.skin % SKINS.len()) as f32 * 0.618 + (look.acc % ACCESSORIES.len()) as f32 * 0.377).fract() * 11.0;
     LAYERS.with(|c| c.set(layers));
-    let r = draw(rt, factory, skin, acc, cx, cy, size, 1.0, false, t - phase);
+    let r = draw(rt, factory, look, cx, cy, size, 1.0, false, t - phase);
     LAYERS.with(|c| c.set(7));
     r
 }
 
-pub fn draw_still(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, acc: usize, cx: f32, cy: f32, size: f32, a: f32, sleeping: bool, blink: f32) -> Result<()> {
-    BONGO.with(|c| c.set(Some(Bongo { paws: None, blink, live: false, zt: 0.0, glow: true, head_only: false })));
-    let r = draw(rt, factory, skin, acc, cx, cy, size, a, sleeping, 0.0);
+#[allow(clippy::too_many_arguments)]
+pub fn draw_still(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx: f32, cy: f32, size: f32, a: f32, sleeping: bool, blink: f32) -> Result<()> {
+    BONGO.with(|c| {
+        c.set(Some(Bongo {
+            paws: None,
+            blink,
+            live: false,
+            zt: 0.0,
+            glow: true,
+            head_only: false,
+            squash: 0.0,
+            head_bob: 0.0,
+            ear_bounce: [0.0; 2],
+            hype: 0.0,
+        }))
+    });
+    let r = draw(rt, factory, look, cx, cy, size, a, sleeping, 0.0);
     BONGO.with(|c| c.set(None));
     r
 }
@@ -744,10 +797,12 @@ struct Pen<'a> {
     a: f32,
     /// Outline width in head units.
     lw: f32,
-    /// The fox's outline colour.
+    /// The mascot's outline colour.
     line: Rgb,
     /// Drawn at a small size: skip fine details.
     small: bool,
+    /// Active species (for species-aware cached head/pattern clipping).
+    sp: Species,
 }
 
 fn ell(x: f32, y: f32, rx: f32, ry: f32) -> D2D1_ELLIPSE {
@@ -876,11 +931,22 @@ impl Pen<'_> {
     }
 
     fn shape(&self, key: &'static str, build: impl FnOnce(&Self) -> Result<ID2D1Geometry>) -> Result<ID2D1Geometry> {
-        if let Some(g) = self.st.shapes.borrow().get(key) {
+        let k = (0u8, key);
+        if let Some(g) = self.st.shapes.borrow().get(&k) {
             return Ok(g.clone());
         }
         let g = build(self)?;
-        self.st.shapes.borrow_mut().insert(key, g.clone());
+        self.st.shapes.borrow_mut().insert(k, g.clone());
+        Ok(g)
+    }
+
+    fn shape_sp(&self, key: &'static str, build: impl FnOnce(&Self) -> Result<ID2D1Geometry>) -> Result<ID2D1Geometry> {
+        let k = (self.sp as u8 + 1, key);
+        if let Some(g) = self.st.shapes.borrow().get(&k) {
+            return Ok(g.clone());
+        }
+        let g = build(self)?;
+        self.st.shapes.borrow_mut().insert(k, g.clone());
         Ok(g)
     }
 
@@ -915,13 +981,20 @@ impl Pen<'_> {
     }
 
     fn head(&self) -> Result<ID2D1Geometry> {
-        self.shape("head", |p| build_path(p.f, &sym(HEAD)))
+        species::head_geo(self, self.sp)
     }
 
-    /// `cmds` clipped to the head outline.
+    /// `cmds` clipped to the active species' head outline.
     fn on_head(&self, key: &'static str, cmds: &[S]) -> Result<ID2D1Geometry> {
         let head = self.head()?;
-        self.clip(key, &head, |p| build_path(p.f, cmds))
+        self.shape_sp(key, |p| unsafe {
+            let b = build_path(p.f, cmds)?;
+            let geo = p.f.CreatePathGeometry()?;
+            let sink = geo.Open()?;
+            head.CombineWithGeometry(&b, D2D1_COMBINE_MODE_INTERSECT, None, 0.0004, &sink)?;
+            sink.Close()?;
+            geo.cast()
+        })
     }
 
     fn star(&self) -> Result<ID2D1Geometry> {
@@ -963,16 +1036,17 @@ enum Layer {
     Front,
 }
 
-/// Draws the fox centred on (cx, cy); `size` is the head width in pixels.
-/// `skin` and `acc` index [`SKINS`] and [`ACCESSORIES`] (wrapping), `t` is
-/// seconds for the idle animation and `sleeping` closes the eyes and adds "z"s.
+/// Draws the mascot centred on (cx, cy); `size` is the head width in pixels.
+/// `look` selects species, skin, head accessory and body/gear accessory.
 #[allow(clippy::too_many_arguments)]
-pub fn draw(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, acc: usize, cx: f32, cy: f32, size: f32, a: f32, sleeping: bool, t: f32) -> Result<()> {
+pub fn draw(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx: f32, cy: f32, size: f32, a: f32, sleeping: bool, t: f32) -> Result<()> {
     if size <= 1.0 || a <= 0.0 {
         return Ok(());
     }
-    let sk = get(skin);
-    let acc = acc % ACCESSORIES.len();
+    let info = species::get(look.species);
+    let sk = get(look.skin);
+    let acc = look.acc % ACCESSORIES.len();
+    let acc2 = look.acc2 % ACCESSORIES.len();
     let mut old = Matrix3x2::default();
     unsafe { rt.GetTransform(&mut old) };
     let line = if luminance(sk.fur) < 0.2 { mix(sk.fur, WHITE, 0.5) } else { mix(sk.fur, INK, 0.66) };
@@ -983,13 +1057,14 @@ pub fn draw(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, skin: usize, acc: us
         brush: solid_for(rt)?,
         base: Matrix3x2::scale(size, size) * tr(cx, cy) * old,
         a,
-        lw: 0.036f32.max(1.0 / size),
+        lw: 0.038f32.max(1.0 / size),
         line,
         small: size < 34.0,
+        sp: info.id,
     };
-    // Each fox gets its own rhythm so a grid of them does not blink in step.
-    let phase = ((skin % SKINS.len()) as f32 * 0.618 + acc as f32 * 0.377).fract() * 11.0;
-    let r = fox(&pen, sk, acc, sleeping, t + phase, size);
+    // Each mascot gets its own rhythm so a grid of them does not blink in step.
+    let phase = ((look.skin % SKINS.len()) as f32 * 0.618 + acc as f32 * 0.377 + look.species as f32 * 0.213).fract() * 11.0;
+    let r = fox(&pen, info, sk, acc, acc2, sleeping, t + phase, size);
     unsafe { rt.SetTransform(&old) };
     r
 }
@@ -1008,9 +1083,19 @@ fn fur_brush(p: &Pen, sk: &Skin) -> Result<ID2D1Brush> {
     }
 }
 
-fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Result<()> {
+fn draw_accs(p: &Pen, acc: usize, acc2: usize, layer: Layer, head: Matrix3x2, t: f32) -> Result<()> {
+    if acc != 0 {
+        accessory(p, acc, layer, head, t)?;
+    }
+    if acc2 != 0 && acc2 != acc {
+        accessory(p, acc2, layer, head, t)?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, sleeping: bool, t: f32, size: f32) -> Result<()> {
     let bongo = BONGO.with(|c| c.get());
-    // The desktop fox holds one pose: every idle motion is frozen at its start.
     let zt = bongo.map_or(t, |b| b.zt);
     let t = match bongo {
         Some(b) if !b.live => 0.0,
@@ -1018,134 +1103,95 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
     };
     let head_only = bongo.is_some_and(|b| b.head_only);
     let tiny = size < 30.0 || head_only;
-    let body = Matrix3x2::identity();
-    let breathe = (t * if sleeping { 1.3 } else { 2.1 }).sin();
-    let bob = breathe * if sleeping { 0.022 } else { 0.014 };
-    let sway = if sleeping { 6.0 + (t * 0.9).sin() } else { (t * 0.75).sin() * 3.0 };
-    let head = rot(sway, 0.0, 0.36) * tr(0.0, bob);
+    let squash = bongo.map_or(0.0, |b| b.squash);
+    let head_bob = bongo.map_or(0.0, |b| b.head_bob);
+    let ear_bounce = bongo.map_or([0.0; 2], |b| b.ear_bounce);
+    let hype = bongo.map_or(0.0, |b| b.hype);
+
+    // Calm breathing + low-pass smoothed squash anchored at the desk line.
+    let breathe = (t * if sleeping { 1.35 } else { 2.0 }).sin();
+    let sx = 1.0 + squash * 0.045 + if sleeping { 0.04 } else { 0.0 } - breathe * if sleeping { 0.018 } else { 0.007 };
+    let sy = 1.0 - squash * 0.045 - if sleeping { 0.05 } else { 0.0 } + breathe * if sleeping { 0.028 } else { 0.012 };
+    let body = tr(0.0, -info.desk_y) * Matrix3x2::scale(sx, sy) * tr(0.0, info.desk_y);
+
+    // Head droops & tilts cozily onto the tucked paws when sleeping.
+    let bob = if sleeping { 0.082 + breathe * 0.014 } else { breathe * 0.010 };
+    let sway = if sleeping { 6.2 + (t * 0.7).sin() * 0.7 } else { (t * 0.85).sin() * 1.4 + head_bob * 1.4 };
+    let head = rot(sway, 0.0, 0.34) * tr(0.0, bob) * body;
     let fur = fur_brush(p, sk)?;
     let show = LAYERS.with(|c| c.get());
 
-    // Behind the fox.
+    // Behind the mascot.
     if !tiny && show & 1 != 0 {
         back_fx(p, sk, t)?;
     }
     if show & 2 != 0 {
-        accessory(p, acc, Layer::Back, head, t)?;
+        draw_accs(p, acc, acc2, Layer::Back, head, t)?;
     }
 
     if show & 1 != 0 {
-
-    // Tail, swishing behind the head (nine of them for the beast).
-    if !tiny && !shinobi::tails(p, sk, &fur, t, sleeping)? {
-        let swing = (t * 1.6).sin() * if sleeping { 3.0 } else { 9.0 };
-        let m = rot(swing, 0.22, 0.36) * body;
-        let tail = p.path("tail", TAIL)?;
-        let tip = p.clip_el("tail_tip", &tail, 0.60, -0.07, 0.12, 0.13)?;
-        p.fill_with(m, &tail, &fur);
-        let tip_c = if sk.pattern == Pattern::Patch { sk.mark } else { sk.cream };
-        p.fill(m, &tip, tip_c, 1.0);
-        p.stroke(m, &tail, p.line, 1.0, p.lw);
-    }
-
-    shinobi::hair_back(p, sk, head)?;
-
-    // Ears.
-    if acc != HELMET {
-    let (tw_side, tw) = twitch(t);
-    for side in [-1.0f32, 1.0] {
-        let deg = if sleeping { 10.0 } else if side == tw_side { tw } else { 0.0 };
-        let m = rot(deg * side, 0.27 * side, -0.16) * head;
-        let (outer, inner, tip_key) = if side > 0.0 {
-            (p.path("ear_r", EAR)?, p.path("ear_in_r", EAR_IN)?, "ear_tip_r")
-        } else {
-            (p.shape("ear_l", |p| build_path(p.f, &mirror(EAR)))?, p.shape("ear_in_l", |p| build_path(p.f, &mirror(EAR_IN)))?, "ear_tip_l")
-        };
-        if sk.pattern == Pattern::Patch {
-            p.fill(m, &outer, sk.mark, 1.0);
-        } else {
-            p.fill_with(m, &outer, &fur);
-            let tip = p.clip_el(tip_key, &outer, 0.36 * side, -0.62, 0.13, 0.14)?;
-            let tip_c = if sk.hair != Hair::None { mix(sk.hairc, p.line, 0.15) } else { mix(sk.fur, p.line, 0.45) };
-            p.fill(m, &tip, tip_c, 1.0);
+        // Calm, weighted tail sway (never frantic even during fast typing).
+        if !tiny && !shinobi::tails(p, sk, &fur, t, sleeping)? {
+            let phase = t * if sleeping { 0.45 } else { 1.05 };
+            let amp = if sleeping { 1.4 } else { 3.6 + hype * 1.2 };
+            let wag = (phase.sin() + 0.22 * (phase * 2.0 - 0.6).sin()) * amp;
+            species::draw_tail(p, info.id, sk, &fur, body, wag, sleeping)?;
         }
-        p.fill(m, &inner, sk.ear, 1.0);
-        p.stroke(m, &outer, p.line, 1.0, p.lw);
-    }
-    }
 
-    // Head.
-    let hg = p.head()?;
-    p.fill_with(head, &hg, &fur);
-    pattern_under(p, sk, head, t)?;
-    let cream = p.shape("cream", |p| build_path(p.f, &sym(CREAM)))?;
-    p.fill(head, &cream, sk.cream, 1.0);
-    pattern_over(p, sk, head)?;
-    p.stroke(head, &hg, p.line, 1.0, p.lw);
-    shinobi::over_head(p, sk, head)?;
-    face(p, sk, head, sleeping, t)?;
-    shinobi::over_eyes(p, sk, head)?;
+        // Cozy species torso sitting on the desk/bottom edge.
+        if !tiny {
+            species::draw_body(p, info.id, sk, &fur, body, sleeping)?;
+        }
+
+        // When sleeping, paws tuck snugly under the resting chin!
+        if !head_only && !tiny && sleeping {
+            species::draw_arms(p, info.id, sk, body, bongo.and_then(|b| b.paws), true, size)?;
+        }
+
+        shinobi::hair_back(p, sk, head)?;
+
+        // Ears (gentle idle sway + occasional soft single-ear flick + tap bounce).
+        if acc != HELMET && acc2 != HELMET {
+            let (tw_side, tw) = twitch(t);
+            let idle_l = if sleeping { 0.0 } else { (t * 1.05 - 0.9).sin() * 1.6 + if tw_side < 0.0 { tw * 0.65 } else { 0.0 } };
+            let idle_r = if sleeping { 0.0 } else { (t * 1.05 + 0.9).sin() * 1.6 + if tw_side > 0.0 { tw * 0.65 } else { 0.0 } };
+            species::draw_ears(p, info.id, sk, &fur, head, [idle_l + ear_bounce[0], idle_r + ear_bounce[1]], sleeping)?;
+        }
+
+        // Head.
+        let hg = p.head()?;
+        p.fill_with(head, &hg, &fur);
+        pattern_under(p, sk, head, t)?;
+        species::draw_head_markings(p, info.id, sk, head, &hg)?;
+        pattern_over(p, sk, head)?;
+        p.stroke(head, &hg, p.line, 1.0, p.lw);
+        species::draw_whiskers(p, info.id, head);
+        shinobi::over_head(p, sk, head)?;
+        face(p, info, sk, head, sleeping, hype, t, breathe)?;
+        shinobi::over_eyes(p, sk, head)?;
     }
 
     if show & 4 != 0 {
-        accessory(p, acc, Layer::Mid, head, t)?;
+        draw_accs(p, acc, acc2, Layer::Mid, head, t)?;
     }
 
-    if show & 1 != 0 {
-    // Paws resting in front, Bongo style.
-    let paw = mix(sk.fur, sk.cream, 0.35);
-    if head_only {
-    } else if let Some(Bongo { paws: Some(down), .. }) = bongo {
-        // Raised beside the cheeks, showing their beans; a tap brings one down on the desk.
-        for (i, side) in [-1.0f32, 1.0].into_iter().enumerate() {
-            let d = down[i];
-            let x = (0.40 + (0.24 - 0.40) * d) * side;
-            let y = 0.29 + (0.47 - 0.29) * d;
-            let (rx, ry) = (0.095 + 0.017 * d, 0.095 - 0.03 * d);
-            p.fill_el(body, x, y, rx, ry, paw, 1.0);
-            p.ring(body, x, y, rx, ry, p.line, 1.0, p.lw);
-            let beans = 1.0 - d * 1.6;
-            if beans > 0.0 {
-                let pink = [1.0, 0.6, 0.7];
-                p.fill_el(body, x, y + 0.022, 0.038, 0.03, pink, beans);
-                for k in [-1.0f32, 0.0, 1.0] {
-                    p.fill_el(body, x + k * 0.04, y - 0.035 + k.abs() * 0.012, 0.016, 0.016, pink, beans);
-                }
-            }
-            if d > 0.5 {
-                let a = (d - 0.5) * 2.0;
-                tap_burst(p, x, y, side, size, a)?;
-            }
-        }
-    } else {
-    for side in [-1.0f32, 1.0] {
-        let x = 0.17 * side;
-        p.fill_el(body, x, 0.43, 0.105, 0.07, paw, 1.0);
-        p.ring(body, x, 0.43, 0.105, 0.07, p.line, 1.0, p.lw);
-        if !p.small {
-            for k in [-1.0f32, 1.0] {
-                p.seg(body, x + k * 0.03, 0.455, x + k * 0.03, 0.485, p.line, 0.7, p.lw * 0.7);
-            }
-        }
-    }
-    }
-
+    if show & 1 != 0 && !head_only && !sleeping {
+        species::draw_arms(p, info.id, sk, body, bongo.and_then(|b| b.paws), false, size)?;
     }
 
     if show & 4 != 0 {
-        accessory(p, acc, Layer::Front, head, t)?;
+        draw_accs(p, acc, acc2, Layer::Front, head, t)?;
     }
     if !tiny && show & 1 != 0 {
         front_fx(p, sk, t)?;
     }
 
     if sleeping && bongo.is_some() {
-        // A drifting "zZZ", outlined so it reads on any wallpaper.
         let z = p.path("zed", ZED)?;
         for i in 0..3 {
             let u = (zt * 0.32 + i as f32 / 3.0).fract();
             let s = 0.075 + u * 0.07;
-            let m = put(0.42 + u * 0.3 + (u * 7.0).sin() * 0.03, -0.3 - u * 0.48, s, -12.0);
+            let m = put(0.42 + u * 0.3 + (u * 7.0).sin() * 0.03, -0.22 - u * 0.48, s, -12.0);
             let w = (0.055f32).max(1.4 / size) / s;
             let a = (u * PI).sin();
             p.stroke(m, &z, mix(sk.fur, INK, 0.7), 0.85 * a, w + 2.0 * p.lw / s);
@@ -1157,7 +1203,7 @@ fn fox(p: &Pen, sk: &Skin, acc: usize, sleeping: bool, t: f32, size: f32) -> Res
         for i in 0..3 {
             let u = (t * 0.32 + i as f32 / 3.0).fract();
             let s = 0.07 + u * 0.07;
-            let m = put(0.44 + u * 0.26 + (u * 7.0).sin() * 0.03, -0.32 - u * 0.5, s, -12.0);
+            let m = put(0.44 + u * 0.26 + (u * 7.0).sin() * 0.03, -0.24 - u * 0.5, s, -12.0);
             let w = (0.05f32).max(1.2 / size) / s;
             p.stroke(m, &z, c, (u * PI).sin() * 0.95, w);
         }
@@ -1180,19 +1226,29 @@ fn tap_burst(p: &Pen, x: f32, y: f32, _side: f32, size: f32, a: f32) -> Result<(
     Ok(())
 }
 
-fn face(p: &Pen, sk: &Skin, head: Matrix3x2, sleeping: bool, t: f32) -> Result<()> {
-    // Blush.
+#[allow(clippy::too_many_arguments)]
+fn face(p: &Pen, info: &SpeciesInfo, sk: &Skin, head: Matrix3x2, sleeping: bool, hype: f32, t: f32, breathe: f32) -> Result<()> {
+    // Blush (glows rosier as typing speed rises).
     if sk.pattern != Pattern::Hearts {
         let pink = [1.0, 0.5, 0.62];
+        let boost = (hype * 1.1).min(1.0);
         for side in [-1.0f32, 1.0] {
+            let (bx, by) = ((info.eye_x + 0.115) * side, info.eye_y + 0.095);
             if p.small || glow_off() {
-                p.fill_el(head, 0.31 * side, 0.19, 0.07, 0.04, pink, 0.4);
+                p.fill_el(head, bx, by, 0.072 + boost * 0.015, 0.042, pink, 0.4 + boost * 0.25);
             } else {
-                p.glow(head, 0.31 * side, 0.19, 0.095, 0.06, pink, 0.6)?;
+                p.glow(head, bx, by, 0.098 + boost * 0.02, 0.062, pink, 0.55 + boost * 0.3)?;
+            }
+            // Subtle anime blush hatch marks in joyful flow state.
+            if !p.small && !sleeping && hype > 0.65 {
+                for j in -1..=1 {
+                    let x = bx + j as f32 * 0.025;
+                    p.seg(head, x - 0.007, by + 0.014, x + 0.009, by - 0.014, [1.0, 0.36, 0.48], 0.55, 0.014);
+                }
             }
         }
     }
-    // Eyes: big and shiny, looking around a little.
+    // Eyes: glossy idle, peaceful sleep, or 2-tier happy ^ ^ smile while typing fast!
     let b = if sleeping {
         1.0
     } else if let Some(bg) = BONGO.with(|c| c.get()) {
@@ -1200,55 +1256,101 @@ fn face(p: &Pen, sk: &Skin, head: Matrix3x2, sleeping: bool, t: f32) -> Result<(
     } else {
         blink(t)
     };
-    let look = if sleeping { 0.0 } else { (t * 0.31).sin() * 0.014 };
+    let look = if sleeping || hype > 0.38 { 0.0 } else { (t * 0.31).sin() * 0.012 };
     let lid = p.path("lid", LID)?;
+    let happy_eye = p.path("happy_eye", HAPPY_EYE)?;
+    let happy_eye_big = p.path("happy_eye_big", HAPPY_EYE_BIG)?;
     for side in [-1.0f32, 1.0] {
-        let (ex, ey) = (0.185 * side + look, 0.065);
-        if b > 0.8 {
-            p.stroke(tr(ex, ey) * head, &lid, sk.eyes, 1.0, p.lw * 1.15);
+        let (ex, ey) = (info.eye_x * side + look, info.eye_y);
+        if sleeping || b > 0.8 {
+            p.stroke(tr(ex, ey) * head, &lid, sk.eyes, 1.0, p.lw * 1.1);
+            continue;
+        }
+        if hype > 0.68 {
+            p.stroke(tr(ex, ey) * head, &happy_eye_big, sk.eyes, 1.0, p.lw * 1.15);
+            continue;
+        }
+        if hype > 0.38 {
+            p.stroke(tr(ex, ey) * head, &happy_eye, sk.eyes, 1.0, p.lw * 1.05);
             continue;
         }
         let style = shinobi::eye_for(sk.eye, side);
-        // Patterned eyes are bigger, so the pattern reads.
         let patterned = style != Eye::Normal && !p.small;
-        let (rx, ry0) = if patterned { (0.1, 0.112) } else { (0.08, 0.094) };
+        let (rx, ry0) = if patterned { (0.095, 0.106) } else { (info.eye_rx, info.eye_ry) };
         let ry = ry0 * (1.0 - b);
         p.fill_el(head, ex, ey, rx, ry, sk.eyes, 1.0);
         if patterned {
             shinobi::iris(p, style, Matrix3x2::scale(rx, ry) * tr(ex, ey) * head, t)?;
         } else if !p.small {
             p.at(head);
-            let shine = p.radial(ex, ey + ry * 0.55, 0.07, ry * 0.6, &[(0.0, mix(sk.eyes, WHITE, 0.45), 0.9), (1.0, sk.eyes, 0.0)], 1.0)?;
-            unsafe { p.rt.FillEllipse(&ell(ex, ey + ry * 0.4, 0.07, ry * 0.6), &shine) };
+            let shine = p.radial(ex, ey + ry * 0.55, 0.065, ry * 0.58, &[(0.0, mix(sk.eyes, WHITE, 0.45), 0.9), (1.0, sk.eyes, 0.0)], 1.0)?;
+            unsafe { p.rt.FillEllipse(&ell(ex, ey + ry * 0.4, 0.065, ry * 0.58), &shine) };
         }
         let k = 1.0 - b;
         if patterned {
-            // One small glint on the rim, clear of the pattern.
             p.fill_el(head, ex - rx * 0.6, ey - ry * 0.62, 0.02, 0.02 * k, WHITE, 0.95);
         } else {
-            p.fill_el(head, ex - 0.026, ey - 0.032 * k, 0.03, 0.03 * k, WHITE, 0.95);
+            p.fill_el(head, ex - 0.023, ey - 0.028 * k, 0.026, 0.024 * k, WHITE, 0.95);
             if !p.small {
-                p.fill_el(head, ex + 0.03, ey + 0.036 * k, 0.014, 0.014 * k, WHITE, 0.85);
+                p.fill_el(head, ex + 0.025, ey + 0.028 * k, 0.012, 0.012 * k, WHITE, 0.85);
             }
         }
-        // Shinobi skins get an anime upper lash, flicked out at the corner.
         if shinobi::anime(sk) && !p.small {
             let lash = p.path("sh_lash", shinobi::LASH)?;
             p.fill(Matrix3x2::scale(rx * side, ry) * tr(ex, ey) * head, &lash, shinobi::lash_colour(sk), 1.0);
         }
     }
-    // Nose and a little "w" mouth (hidden under a cloth mask).
     if sk.face == Face::Mask {
         return Ok(());
     }
-    let nose_c = if luminance(sk.cream) > 0.35 { mix(sk.fur, INK, 0.82) } else { [1.0, 0.72, 0.82] };
-    let nose = p.path("nose", NOSE)?;
-    p.fill(head, &nose, nose_c, 1.0);
-    if !p.small {
-        p.fill_el(head, -0.014, 0.185, 0.014, 0.008, WHITE, 0.6);
+    // Nose (with subtle idle wiggle for Bunny).
+    let wiggle = if info.id == Species::Bunny && !sleeping && (t * 1.2).sin() > 0.5 { (t * 7.5).sin() * 0.004 } else { 0.0 };
+    let ny = info.eye_y + 0.088 + wiggle;
+    let nose_c = if info.id == Species::Bunny {
+        [1.0, 0.58, 0.68]
+    } else if luminance(sk.cream) > 0.35 {
+        mix(sk.fur, INK, 0.82)
+    } else {
+        [1.0, 0.72, 0.82]
+    };
+    let nm = tr(0.0, ny) * head;
+    if info.id == Species::Bunny {
+        p.fill_el(nm, 0.0, 0.0, 0.036, 0.024, nose_c, 1.0);
+    } else {
+        let nose = p.path("nose", NOSE)?;
+        p.fill(nm, &nose, nose_c, 1.0);
     }
-    let mouth = p.path("mouth", MOUTH)?;
-    p.stroke(head, &mouth, nose_c, 1.0, p.lw * 0.85);
+    if !p.small {
+        p.fill_el(nm, -0.012, -0.007, 0.012, 0.007, WHITE, 0.65);
+    }
+
+    // Mouth: relaxed sleeping 'o' + pastel bubble, or 2-tier clean happy smile (no tongue).
+    let mm = tr(0.0, ny + 0.044) * head;
+    let line_c = if luminance(sk.cream) > 0.35 { mix(sk.fur, INK, 0.82) } else { [1.0, 0.72, 0.82] };
+    if sleeping {
+        let mr = 0.020 + (breathe * 0.5 + 0.5) * 0.009;
+        p.fill_el(mm, 0.0, 0.012, mr * 1.15, mr, [0.92, 0.54, 0.60], 1.0);
+        p.ring(mm, 0.0, 0.012, mr * 1.15, mr, line_c, 1.0, p.lw * 0.65);
+        // Translucent pastel sleep bubble expanding/shrinking with breathing.
+        if !p.small {
+            let bub = 0.050 + (breathe * 0.5 + 0.5) * 0.042;
+            let (bx, by) = (0.04 + bub * 0.65, ny + 0.01 - bub * 0.15);
+            p.at(head);
+            let bg = p.radial(bx - bub * 0.3, by - bub * 0.3, bub, bub, &[(0.0, WHITE, 0.78), (0.6, [0.78, 0.92, 1.0], 0.32), (1.0, [0.68, 0.86, 1.0], 0.55)], 1.0)?;
+            unsafe { p.rt.FillEllipse(&ell(bx, by, bub, bub), &bg) };
+            p.ring(head, bx, by, bub, bub, WHITE, 0.72, 0.014);
+        }
+    } else if hype > 0.68 {
+        let open = p.path("mouth_open", MOUTH_OPEN)?;
+        p.fill(mm, &open, [0.95, 0.52, 0.61], 1.0);
+        p.stroke(mm, &open, line_c, 1.0, p.lw * 0.75);
+    } else if hype > 0.38 {
+        let happy = p.path("mouth_happy", MOUTH_HAPPY)?;
+        p.stroke(mm, &happy, line_c, 1.0, p.lw * 0.82);
+    } else {
+        let mouth = p.path("mouth", MOUTH)?;
+        p.stroke(mm, &mouth, line_c, 1.0, p.lw * 0.82);
+    }
     Ok(())
 }
 
@@ -1272,8 +1374,22 @@ fn pattern_under(p: &Pen, sk: &Skin, head: Matrix3x2, t: f32) -> Result<()> {
             }
         }
         Pattern::Calico => {
-            let a = p.clip_el("calico_a", &hg, -0.3, -0.22, 0.24, 0.2)?;
-            let b = p.clip_el("calico_b", &hg, 0.34, -0.06, 0.16, 0.22)?;
+            let a = p.shape_sp("calico_a", |p| unsafe {
+                let b = p.ellipse_geo(-0.3, -0.22, 0.24, 0.2)?;
+                let geo = p.f.CreatePathGeometry()?;
+                let sink = geo.Open()?;
+                hg.CombineWithGeometry(&b, D2D1_COMBINE_MODE_INTERSECT, None, 0.0004, &sink)?;
+                sink.Close()?;
+                geo.cast()
+            })?;
+            let b = p.shape_sp("calico_b", |p| unsafe {
+                let b = p.ellipse_geo(0.34, -0.06, 0.16, 0.22)?;
+                let geo = p.f.CreatePathGeometry()?;
+                let sink = geo.Open()?;
+                hg.CombineWithGeometry(&b, D2D1_COMBINE_MODE_INTERSECT, None, 0.0004, &sink)?;
+                sink.Close()?;
+                geo.cast()
+            })?;
             p.fill(head, &a, sk.mark, 1.0);
             p.fill(head, &b, sk.fur2, 1.0);
         }

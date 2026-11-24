@@ -120,8 +120,10 @@ struct Desk {
     /// Eye changes left in the current blink (3 for a double blink).
     blink_left: u8,
     blinks: u32,
+    species: usize,
     skin: usize,
     acc: usize,
+    acc2: usize,
     blink_on: bool,
     nap_on: bool,
     anim_on: bool,
@@ -141,6 +143,16 @@ struct Desk {
     raised: Instant,
     /// Paws to draw instead of the live ones (for `--snapshot`).
     forced: Option<[f32; 2]>,
+    /// Smooth low-pass Bongo tap physics (zero jitter at fast typing speeds).
+    squash: f32,
+    squash_target: f32,
+    head_bob: f32,
+    head_target: f32,
+    ear_bounce: [f32; 2],
+    hype: f32,
+    last_hit: Instant,
+    last_body: Instant,
+    last_tick: Instant,
 }
 
 thread_local! {
@@ -186,9 +198,11 @@ pub fn sync(s: &Settings) {
         if (scale_for(d.hwnd, s) - d.scale).abs() > 0.001 || (size - d.size).abs() > 0.01 || s.desk_on_taskbar != d.on_taskbar {
             return true;
         }
-        let looks = (d.skin, d.acc, d.glow_on, d.acc_on) != (s.skin, s.acc, s.desk_glow, s.desk_acc);
+        let looks = (d.species, d.skin, d.acc, d.acc2, d.glow_on, d.acc_on) != (s.species, s.skin, s.acc, s.acc2, s.desk_glow, s.desk_acc);
+        d.species = s.species;
         d.skin = s.skin;
         d.acc = s.acc;
+        d.acc2 = s.acc2;
         d.glow_on = s.desk_glow;
         d.acc_on = s.desk_acc;
         d.blink_on = s.desk_blink;
@@ -374,8 +388,10 @@ fn open(s: &Settings) -> Result<()> {
             eyes_shut: false,
             blink_left: 0,
             blinks: 0,
+            species: s.species,
             skin: s.skin,
             acc: s.acc,
+            acc2: s.acc2,
             blink_on: s.desk_blink,
             nap_on: s.desk_nap,
             anim_on: s.desk_anim,
@@ -391,6 +407,15 @@ fn open(s: &Settings) -> Result<()> {
             drag: None,
             raised: Instant::now(),
             forced: None,
+            squash: 0.0,
+            squash_target: 0.0,
+            head_bob: 0.0,
+            head_target: 0.0,
+            ear_bounce: [0.0; 2],
+            hype: 0.0,
+            last_hit: Instant::now(),
+            last_body: Instant::now(),
+            last_tick: Instant::now(),
         };
         d.draw();
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
@@ -462,6 +487,25 @@ impl Desk {
         let side = self.next;
         self.next ^= 1;
         let now = Instant::now();
+        let gap_ms = now.duration_since(self.last_hit).as_millis();
+        self.last_hit = now;
+        if gap_ms < 150 {
+            self.hype = (self.hype + 0.18).min(1.0);
+        } else if gap_ms < 260 {
+            self.hype = (self.hype + 0.11).min(1.0);
+        } else {
+            self.hype = (self.hype + 0.05).min(1.0);
+        }
+
+        // Crisp paws on every key; rate-limited gentle body/head pulse so fast typing never jitters.
+        if now.duration_since(self.last_body).as_millis() >= 220 {
+            let calm = 1.0 - self.hype * 0.55;
+            self.squash_target = 0.48 * calm;
+            self.ear_bounce[side] = 4.5 * calm;
+            self.head_target = (if side == 0 { -0.45 } else { 0.45 }) * calm;
+            self.last_body = now;
+        }
+
         self.down[side] = true;
         unsafe { SetTimer(Some(self.hwnd), TIMER_PAW + side, PAW_MS, None) };
         if self.sleeping {
@@ -472,14 +516,46 @@ impl Desk {
         // step back above it just after.
         self.raised = now;
         unsafe { SetTimer(Some(self.hwnd), TIMER_RAISE, 150, None) };
+        self.update_anim();
         self.draw();
     }
 
-    /// Runs frames while animating (or asleep, for the "zZZ"); none otherwise.
+    fn settling(&self) -> bool {
+        self.squash > 0.005 || self.squash_target > 0.005 || self.head_bob.abs() > 0.005 || self.ear_bounce[0].abs() > 0.05 || self.ear_bounce[1].abs() > 0.05 || self.hype > 0.005
+    }
+
+    fn on_anim_timer(&mut self) {
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_tick).as_secs_f32().min(0.05);
+        self.last_tick = now;
+
+        self.squash_target *= (-9.0 * dt).exp();
+        self.squash += (self.squash_target - self.squash) * (dt * 14.0).min(1.0);
+        self.head_target *= (-6.0 * dt).exp();
+        self.head_bob += (self.head_target - self.head_bob) * (dt * 9.0).min(1.0);
+        for e in &mut self.ear_bounce {
+            *e *= (-15.0 * dt).exp();
+        }
+        if now.duration_since(self.last_hit).as_millis() > 380 {
+            self.hype = (self.hype - dt * 0.55).max(0.0);
+        }
+        if !self.settling() {
+            self.squash = 0.0;
+            self.squash_target = 0.0;
+            self.head_bob = 0.0;
+            self.head_target = 0.0;
+            self.ear_bounce = [0.0; 2];
+            self.hype = 0.0;
+        }
+        self.draw();
+        self.update_anim();
+    }
+
+    /// Runs frames while animating, settling a tap pulse, or asleep (for "zZZ"); none otherwise.
     fn update_anim(&mut self) {
         let ms = if self.hidden || self.forced.is_some() {
             0
-        } else if self.anim_on {
+        } else if self.anim_on || self.settling() {
             ANIM_MS
         } else if self.sleeping {
             ZZZ_MS
@@ -488,6 +564,7 @@ impl Desk {
         };
         if ms != self.anim_ms {
             self.anim_ms = ms;
+            self.last_tick = Instant::now();
             unsafe {
                 if ms == 0 {
                     let _ = KillTimer(Some(self.hwnd), TIMER_ANIM);
@@ -514,8 +591,20 @@ impl Desk {
             self.rt.BeginDraw();
             self.rt.SetTransform(&Matrix3x2::identity());
             self.rt.Clear(Some(&D2D1_COLOR_F::default()));
-            let acc = if self.acc_on { self.acc } else { 0 };
-            let _ = mascot::draw_bongo(&self.rt, &self.factory, self.skin, acc, cx, cy, self.size, self.sleeping, paws, blink, self.started.elapsed().as_secs_f32(), self.anim_on, self.glow_on);
+            let (acc, acc2) = if self.acc_on { (self.acc, self.acc2) } else { (0, 0) };
+            let look = mascot::Look::new(self.species, self.skin, acc, acc2);
+            let st = mascot::BongoState {
+                paws,
+                blink,
+                live: self.anim_on,
+                zt: self.started.elapsed().as_secs_f32(),
+                glow: self.glow_on,
+                squash: self.squash,
+                head_bob: self.head_bob,
+                ear_bounce: self.ear_bounce,
+                hype: self.hype,
+            };
+            let _ = mascot::draw_bongo(&self.rt, &self.factory, look, cx, cy, self.size, self.sleeping, st);
             if self.rt.EndDraw(None, None).is_err() {
                 return;
             }
@@ -616,8 +705,17 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
     // The app icon: the default fox's head at each icon size.
     for px in [16, 20, 24, 32, 40, 48, 64, 96, 128, 256] {
         let k = px as f32;
-        if let Some(png) = fox_png(px, |rt, f| mascot::draw_head(rt, f, 0, k * ICON_X, k * ICON_Y, k * ICON_SIZE)) {
+        if let Some(png) = fox_png(px, |rt, f| mascot::draw_head(rt, f, 0, 0, k * ICON_X, k * ICON_Y, k * ICON_SIZE)) {
             let _ = std::fs::write(dir.join(format!("icon_{px}.png")), png);
+        }
+    }
+    // Render all 5 species stills for quick visual verification.
+    for sp in 0..mascot::SPECIES.len() {
+        let px = 220;
+        let k = px as f32;
+        let skin = match sp { 1 => 24, 2 => 1, 3 => 6, 4 => 19, _ => 0 };
+        if let Some(png) = fox_png(px, |rt, f| mascot::draw_still(rt, f, mascot::Look::new(sp, skin, 0, 0), k * 0.5, k * 0.56, k * 0.42, 1.0, false, 0.0)) {
+            let _ = std::fs::write(dir.join(format!("species_{sp}.png")), png);
         }
     }
     if std::env::var_os("FUZZIE_PACK").is_some() {
@@ -626,12 +724,12 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
     if std::env::var_os("FUZZIE_WEB_FRAMES").is_some() {
         web_frames(&dir.join("web"));
     }
-    // A gallery of looks for the web page: whole foxes, skin + accessory.
+    // A gallery of looks for the web page: whole mascots, skin + accessory.
     let looks = [(0, 0), (1, 22), (3, 9), (4, 4), (5, 24), (6, 7), (8, 13), (9, 17), (10, 25), (11, 5), (14, 8), (16, 16), (19, 6), (21, 19), (25, 15), (27, 18), (29, 21), (31, 20), (36, 11), (38, 3), (45, 14), (23, 26)];
     for (skin, acc) in looks {
         let px = 220;
         let k = px as f32;
-        if let Some(png) = fox_png(px, |rt, f| mascot::draw_still(rt, f, skin, acc, k * 0.5, k * 0.56, k * 0.42, 1.0, false, 0.0)) {
+        if let Some(png) = fox_png(px, |rt, f| mascot::draw_still(rt, f, mascot::Look::new(0, skin, acc, 0), k * 0.5, k * 0.56, k * 0.42, 1.0, false, 0.0)) {
             let _ = std::fs::write(dir.join(format!("fox_{skin}_{acc}.png")), png);
         }
     }
@@ -648,7 +746,7 @@ fn web_frames(dir: &std::path::Path) {
     let classic = &mascot::PACKS[0];
     let skins = classic.skins.end;
     let save = |name: String, skin: usize, acc: usize, layers: u8, t: f32| {
-        if let Some(png) = fox_png(px, |rt, f| mascot::draw_layers(rt, f, skin, acc, k * 0.5, k * 0.56, k * 0.42, t, layers)) {
+        if let Some(png) = fox_png(px, |rt, f| mascot::draw_layers(rt, f, mascot::Look::new(0, skin, acc, 0), k * 0.5, k * 0.56, k * 0.42, t, layers)) {
             let _ = std::fs::write(dir.join(name), png);
         }
     };
@@ -657,7 +755,8 @@ fn web_frames(dir: &std::path::Path) {
     let (size, cx) = (big as f32 / W_K, big as f32 / 2.0);
     let cy = FOX_Y_K * size + (big as f32 - H_K * size) / 2.0;
     for (name, paws, sleeping, blink) in [("rest", [0.0, 0.0], false, 0.0), ("left", [1.0, 0.0], false, 0.0), ("right", [0.0, 1.0], false, 0.0), ("blink", [0.0, 0.0], false, 1.0), ("sleep", [0.0, 0.0], true, 0.0)] {
-        if let Some(png) = fox_png(big, |rt, f| mascot::draw_bongo(rt, f, 0, 0, cx, cy, size, sleeping, paws, blink, 1.2, false, true)) {
+        let st = mascot::BongoState { paws, blink, live: false, zt: 1.2, glow: true, squash: 0.0, head_bob: 0.0, ear_bounce: [0.0; 2], hype: 0.0 };
+        if let Some(png) = fox_png(big, |rt, f| mascot::draw_bongo(rt, f, mascot::Look::default(), cx, cy, size, sleeping, st)) {
             let _ = std::fs::write(dir.with_file_name(format!("bongo_{name}.png")), png);
         }
     }
@@ -667,6 +766,12 @@ fn web_frames(dir: &std::path::Path) {
         let t = WEB_LOOP + i as f32 * WEB_LOOP / WEB_FRAMES as f32;
         for skin in 0..skins {
             save(format!("skin_{skin}_{i:02}.png"), skin, 0, 1, t);
+        }
+        // Showcase frames for the other 4 species (Cat, Bunny, Shiba, Red Panda) with signature Classic skins.
+        for (sp, sk) in [(1usize, 24usize), (2, 1), (3, 6), (4, 19)] {
+            if let Some(png) = fox_png(px, |rt, f| mascot::draw_layers(rt, f, mascot::Look::new(sp, sk, 0, 0), k * 0.5, k * 0.56, k * 0.42, t, 1)) {
+                let _ = std::fs::write(dir.join(format!("sp_{sp}_{i:02}.png")), png);
+            }
         }
         for acc in classic.accs.clone() {
             save(format!("accb_{acc}_{i:02}.png"), 0, acc, 2, t);
@@ -685,7 +790,8 @@ fn pack_frames(dir: &std::path::Path) {
     let (first, acc0) = (pack.skins.start, pack.accs.start);
     let save = |name: String, skin: usize, acc: usize, t: f32, zoom: bool| {
         let (cy, size) = if zoom { (k * 0.42, k * 0.92) } else { (k * 0.56, k * 0.4) };
-        if let Some(png) = fox_png(px, |rt, f| if t < 2.0 { mascot::draw_still(rt, f, skin, acc, k * 0.5, cy, size, 1.0, false, 0.0) } else { mascot::draw(rt, f, skin, acc, k * 0.5, cy, size, 1.0, false, t) }) {
+        let look = mascot::Look::new(0, skin, acc, 0);
+        if let Some(png) = fox_png(px, |rt, f| if t < 2.0 { mascot::draw_still(rt, f, look, k * 0.5, cy, size, 1.0, false, 0.0) } else { mascot::draw(rt, f, look, k * 0.5, cy, size, 1.0, false, t) }) {
             let _ = std::fs::write(dir.join(name), png);
         }
     };
@@ -778,7 +884,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             match wp.0 {
                 TIMER_BLINK => with_desk(|d| d.on_blink_timer()),
                 TIMER_EYES => with_desk(|d| d.on_eyes_timer()),
-                TIMER_ANIM => with_desk(|d| d.draw()),
+                TIMER_ANIM => with_desk(|d| d.on_anim_timer()),
                 TIMER_RAISE => with_desk(|d| {
                     let _ = KillTimer(Some(d.hwnd), TIMER_RAISE);
                     if !d.hidden { raise(d.hwnd) }

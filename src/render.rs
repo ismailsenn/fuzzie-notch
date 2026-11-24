@@ -241,8 +241,8 @@ pub struct Scene<'a> {
     pub minimal: bool,
     /// Bouncing bars in the collapsed notch while music plays.
     pub visualizer: bool,
-    /// Mascot skin, accessory and whether it is napping; None hides the mascot.
-    pub mascot: Option<(usize, usize, bool)>,
+    /// Mascot look and whether it is napping; None hides the mascot.
+    pub mascot: Option<(mascot::Look, bool)>,
     /// Hover highlight per hit area, 0..1, eased by the caller.
     pub hover: &'a [(Hit, f32)],
     /// The area just clicked and how much of its feedback is left (1 → 0).
@@ -1655,7 +1655,7 @@ impl Renderer {
                 self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), 0.04 * a)?);
             }
             let fa = if f.online { a } else { a * 0.45 };
-            mascot::draw_still(&self.rt, &self.factory, f.skin, f.acc, lx + 22.0, cy + 1.0, 17.0, fa, !f.online, 0.0)?;
+            mascot::draw_still(&self.rt, &self.factory, mascot::Look::new(0, f.skin, f.acc, 0), lx + 22.0, cy + 1.0, 17.0, fa, !f.online, 0.0)?;
             if f.online {
                 unsafe {
                     let e = D2D1_ELLIPSE { point: Vector2 { X: lx + 34.0, Y: cy + 10.0 }, radiusX: 3.5, radiusY: 3.5 };
@@ -1801,12 +1801,12 @@ impl Renderer {
     }
 
     fn mascot(&self, s: &Scene, cx: f32, cy: f32, size: f32, a: f32) -> Result<()> {
-        let Some((skin, acc, sleeping)) = s.mascot else { return Ok(()) };
+        let Some((look, sleeping)) = s.mascot else { return Ok(()) };
         if a <= 0.0 {
             return Ok(());
         }
         self.live.set(true);
-        mascot::draw(&self.rt, &self.factory, skin, acc, cx, cy, size, a, sleeping, s.time)
+        mascot::draw(&self.rt, &self.factory, look, cx, cy, size, a, sleeping, s.time)
     }
 
     fn fg(&self) -> [f32; 3] {
@@ -1921,7 +1921,7 @@ impl Renderer {
                     self.rt.FillEllipse(&e, &self.brush(accent, 0.22 * a)?);
                 }
                 if let Some((skin, acc)) = n.fox {
-                    mascot::draw_still(&self.rt, &self.factory, skin, acc, cx, cy + 1.0, 22.0, a, false, 0.0)?;
+                    mascot::draw_still(&self.rt, &self.factory, mascot::Look::new(0, skin, acc, 0), cx, cy + 1.0, 22.0, a, false, 0.0)?;
                 } else {
                     let bell = D2D_RECT_F { left: cx - r, top: cy - r, right: cx + r, bottom: cy + r };
                     self.text("\u{EA8F}", &self.f.icons_small, bell, accent, a)?;

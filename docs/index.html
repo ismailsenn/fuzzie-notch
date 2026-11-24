@@ -495,25 +495,25 @@
 
   <section id="looks" class="reveal">
     <div class="kicker">Make it yours</div>
-    <h2 class="serif">Dress up <span class="grad">your fox.</span></h2>
-    <p class="sub">Hover any fox to see it come alive, then mix any look with any accessory. Pick a colour and the whole page follows along.</p>
+    <h2 class="serif">Pick a buddy, <span class="grad">dress it up.</span></h2>
+    <p class="sub">Choose from 5 fluffy animals, mix 49 looks, and stack Head and Gear accessories together. Pick a colour and the whole page follows along.</p>
     <div class="studio">
       <div class="preview">
         <div class="mini-notch"><div class="fx" id="headFox"></div><div class="t"><div>Blinding Lights</div><div>The Weeknd</div><div class="p"><i></i></div></div><span class="eq"><b></b><b></b><b></b></span></div>
         <div class="fx stage-fox" id="stageFox"></div>
-        <div class="stage-name" id="stageName">Ember<span>no accessory</span></div>
+        <div class="stage-name" id="stageName">Fluffy Fox · Ember<span>no accessories</span></div>
         <div class="row">
           <div class="swatches" id="swatches"></div>
           <button class="shuffle" id="shuffle">&#127922; Surprise me</button>
         </div>
       </div>
       <div>
-        <div class="seg" role="tablist"><button class="on" id="segSkins">Looks<small>49</small></button><button id="segAccs">Accessories<small>26</small></button></div>
+        <div class="seg" role="tablist"><button class="on" id="segSpecies">Animals<small>5</small></button><button id="segSkins">Looks<small>49</small></button><button id="segHead">Head<small>22</small></button><button id="segGear">Gear<small>4</small></button></div>
         <div class="grid" id="grid"></div>
         <div class="counts">
-          <div><b>49</b><span>looks to try here</span></div>
-          <div><b>26</b><span>accessories</span></div>
-          <div><b>&infin;</b><span>colours</span></div>
+          <div><b>5</b><span>fluffy animals</span></div>
+          <div><b>49</b><span>looks</span></div>
+          <div><b>26</b><span>head + gear slots</span></div>
         </div>
       </div>
     </div>
@@ -640,12 +640,23 @@
   // Every look is drawn by the app itself into sprite sheets: 52 frames on a
   // 13 x 4 grid, one 4.3 s loop. Accessories come in separate back and front
   // layers so they fit on any skin. Sheets load only when a fox starts moving.
+  const SPECIES = ["Fluffy Fox", "Mochi Cat", "Puff Bunny", "Chibi Shiba", "Red Panda"];
   const SKINS = ["Ember", "Snowdrift", "Graphite", "Midnight", "Cherry", "Moss", "Honey", "Shadow", "Lilac", "Lagoon", "Cocoa", "Peach", "Lime", "Coral", "Nebula", "Storm", "Dusk", "Glacier", "Rosewood", "Copper", "Pumpkin", "Tiger", "Snow Leopard", "Dalmatian", "Calico", "Panda", "Bandit", "Aurora", "Galaxy", "Supernova", "Starlight", "Cotton Candy", "Mint Choco", "Lemonade", "Phoenix", "Sakura", "Kitsune", "Ghost", "Rainbow", "Golden", "Ocean", "Forest", "Lava", "Frost", "Bubblegum", "Neon", "Melon", "Blueberry", "Strawberry"];
   const ACCS = ["None", "Headband", "Ninja Band", "Star Clip", "Flower", "Heart Boppers", "Top Hat", "Royal Crown", "Astronaut", "Planet Ring", "Forest Antlers", "Fox Mask", "Peacock Crest", "Angel Wings", "Glasses", "Bow", "Scarf", "Headphones", "Halo", "Sunglasses", "Party Hat", "Witch Hat", "Flower Crown", "Devil Horns", "Sprout", "Beanie", "Knight Helmet"];
+  const GEAR_IDS = [0, 8, 9, 13, 16];
+  const HEAD_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26];
   const BACK = new Set([9, 13]);
   const FRONT = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]);
   const FRAMES = 52, COLS = 13, ROWS = 4, LOOP_MS = 4300;
-  const layersOf = (skin, acc) => [...(BACK.has(acc) ? ["accb_" + acc] : []), "skin_" + skin, ...(FRONT.has(acc) ? ["accf_" + acc] : [])];
+  const layersOf = (skin, acc, acc2 = 0, sp = 0) => {
+    const out = [];
+    if (BACK.has(acc)) out.push("accb_" + acc);
+    if (acc2 && acc2 !== acc && BACK.has(acc2)) out.push("accb_" + acc2);
+    out.push(sp > 0 ? "sp_" + sp : "skin_" + skin);
+    if (FRONT.has(acc)) out.push("accf_" + acc);
+    if (acc2 && acc2 !== acc && FRONT.has(acc2)) out.push("accf_" + acc2);
+    return out;
+  };
   const sheets = new Map();
   const sheet = (n) => {
     if (!sheets.has(n)) sheets.set(n, new Promise((ok) => { const i = new Image(); i.onload = () => ok(true); i.onerror = () => ok(false); i.src = "img/fox/" + n + ".webp"; }));
@@ -672,9 +683,9 @@
 
   class Fox {
     constructor(el) { this.el = el; this.names = []; this.live = false; this.ready = false; this.token = 0; this.frame = -1; }
-    set(skin, acc) {
-      this.skin = skin; this.acc = acc;
-      const names = layersOf(skin, acc);
+    set(skin, acc, acc2 = 0, sp = 0) {
+      this.skin = skin; this.acc = acc; this.acc2 = acc2; this.sp = sp;
+      const names = layersOf(skin, acc, acc2, sp);
       const token = ++this.token;
       this.names = names;
       this.ready = false;
@@ -816,56 +827,81 @@
   setInterval(() => { if (auto && !document.hidden) show((si + 1) % screens.length); }, 4200);
 
   // ---------- the moving strip ----------
-  const chips = [["&#9835;", "Synced lyrics", "#ff8a3d"], ["&#9638;", "Shelf", "#ffd23f"], ["&#10697;", "Clipboard", "#2ee6c5"], ["&#9000;", "Desktop Fuzzie", "#ff4d8d"], ["&#10084;", "Friends", "#ff6b9a"], ["&#9995;", "Pokes", "#ffb050"], ["&#127911;", "Listen along", "#8a5cff"], ["&#128276;", "Notifications", "#3d9bff"], ["&#128266;", "Volume HUD", "#5ad1ff"], ["&#10022;", "49 looks", "#c26bff"], ["&#127912;", "Any colour", "#1ed760"], ["&#9889;", "Rust + Direct2D", "#ffd23f"]];
+  const chips = [["&#9835;", "Synced lyrics", "#ff8a3d"], ["&#9638;", "Shelf", "#ffd23f"], ["&#10697;", "Clipboard", "#2ee6c5"], ["&#9000;", "Desktop Fuzzie", "#ff4d8d"], ["&#10084;", "Friends", "#ff6b9a"], ["&#9995;", "Pokes", "#ffb050"], ["&#127911;", "Listen along", "#8a5cff"], ["&#128276;", "Notifications", "#3d9bff"], ["&#128266;", "Volume HUD", "#5ad1ff"], ["&#10022;", "5 animals · 49 looks", "#c26bff"], ["&#127912;", "Dual accessories", "#1ed760"], ["&#9889;", "Rust + Direct2D", "#ffd23f"]];
   const row = chips.map((c) => '<span class="chip"><i style="background:' + c[2] + '">' + c[0] + "</i>" + c[1] + "</span>").join("");
   $("strip").innerHTML = row + row;
 
   // ---------- studio ----------
-  const look = { skin: 0, acc: 0 };
-  // The big fox in the studio and its head in the notch never stop moving.
+  const look = { sp: 0, skin: 0, acc: 0, acc2: 0 };
   const stage = new Fox($("stageFox"));
   const head = new Fox($("headFox"));
   stage.always = head.always = true;
   const paint = () => {
-    stage.set(look.skin, look.acc);
-    head.set(look.skin, look.acc);
-    $("stageName").innerHTML = SKINS[look.skin] + "<span>" + (look.acc ? "wearing " + ACCS[look.acc] : "no accessory") + "</span>";
-    document.querySelectorAll(".look").forEach((b) => b.classList.toggle("on", mode === "skins" ? +b.dataset.i === look.skin : +b.dataset.i === look.acc));
+    stage.set(look.skin, look.acc, look.acc2, look.sp);
+    head.set(look.skin, look.acc, look.acc2, look.sp);
+    const title = look.sp > 0 ? SPECIES[look.sp] : SPECIES[0] + " · " + SKINS[look.skin];
+    const gear = [look.acc ? ACCS[look.acc] : "", look.acc2 ? ACCS[look.acc2] : ""].filter(Boolean);
+    $("stageName").innerHTML = title + "<span>" + (gear.length ? "wearing " + gear.join(" + ") : "no accessories") + "</span>";
+    document.querySelectorAll(".look").forEach((b) => {
+      const v = +b.dataset.i;
+      const on = mode === "species" ? v === look.sp : mode === "skins" ? look.sp === 0 && v === look.skin : mode === "head" ? v === look.acc : v === look.acc2;
+      b.classList.toggle("on", on);
+    });
   };
-  let mode = "skins";
+  let mode = "species";
   const cards = [];
   const build = () => {
     cards.forEach((c) => c.stop());
     cards.length = 0;
     const grid = $("grid");
     grid.replaceChildren();
-    const n = mode === "skins" ? SKINS.length : ACCS.length;
-    for (let i = 0; i < n; i++) {
+    const list = mode === "species" ? SPECIES.map((n, i) => [i, n])
+      : mode === "skins" ? SKINS.map((n, i) => [i, n])
+      : mode === "head" ? HEAD_IDS.map((i) => [i, ACCS[i]])
+      : GEAR_IDS.map((i) => [i, ACCS[i]]);
+    for (const [i, name] of list) {
       const b = document.createElement("button");
       b.className = "look";
       b.dataset.i = i;
-      const name = mode === "skins" ? SKINS[i] : ACCS[i];
       b.title = name;
       const el = document.createElement("div");
       el.className = "fx";
       b.append(el, name);
       const fox = new Fox(el);
-      if (mode === "skins") fox.set(i, look.acc); else fox.set(look.skin, i);
+      if (mode === "species") fox.set(look.skin, look.acc, look.acc2, i);
+      else if (mode === "skins") fox.set(i, look.acc, look.acc2, 0);
+      else if (mode === "head") fox.set(look.skin, i, look.acc2, look.sp);
+      else fox.set(look.skin, look.acc, i, look.sp);
       cards.push(fox);
       b.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") fox.play(); });
       b.addEventListener("pointerleave", () => fox.stop());
-      b.onclick = () => { if (mode === "skins") look.skin = i; else look.acc = i; paint(); };
+      b.onclick = () => {
+        if (mode === "species") look.sp = i;
+        else if (mode === "skins") { look.sp = 0; look.skin = i; }
+        else if (mode === "head") look.acc = i;
+        else look.acc2 = i;
+        paint();
+      };
       grid.appendChild(b);
     }
     paint();
     stage.play();
     head.play();
   };
-  $("segSkins").onclick = () => { mode = "skins"; $("segSkins").classList.add("on"); $("segAccs").classList.remove("on"); build(); };
-  $("segAccs").onclick = () => { mode = "accs"; $("segAccs").classList.add("on"); $("segSkins").classList.remove("on"); build(); };
+  const setMode = (m, id) => {
+    mode = m;
+    ["segSpecies", "segSkins", "segHead", "segGear"].forEach((k) => $(k).classList.toggle("on", k === id));
+    build();
+  };
+  $("segSpecies").onclick = () => setMode("species", "segSpecies");
+  $("segSkins").onclick = () => setMode("skins", "segSkins");
+  $("segHead").onclick = () => setMode("head", "segHead");
+  $("segGear").onclick = () => setMode("gear", "segGear");
   $("shuffle").onclick = () => {
+    look.sp = Math.floor(Math.random() * SPECIES.length);
     look.skin = Math.floor(Math.random() * SKINS.length);
-    look.acc = Math.random() < 0.15 ? 0 : 1 + Math.floor(Math.random() * (ACCS.length - 1));
+    look.acc = HEAD_IDS[Math.floor(Math.random() * HEAD_IDS.length)];
+    look.acc2 = Math.random() < 0.35 ? 0 : GEAR_IDS[1 + Math.floor(Math.random() * (GEAR_IDS.length - 1))];
     build();
   };
   // Build the grid only when the studio comes near, so its pictures don't load up front.

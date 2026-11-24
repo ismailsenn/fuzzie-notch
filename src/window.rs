@@ -547,7 +547,7 @@ impl App {
             side: self.side(),
             minimal: s.idle_style == IdleStyle::Minimal,
             visualizer: s.audio_visualizer,
-            mascot: s.show_mascot.then_some((s.skin, s.acc, self.sleeping)),
+            mascot: s.show_mascot.then_some((crate::mascot::Look::new(s.species, s.skin, s.acc, s.acc2), self.sleeping)),
             hover: &self.hover,
             flash: self.flash,
         };

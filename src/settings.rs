@@ -129,10 +129,14 @@ pub struct Settings {
     /// and how gently it fades in (0 = from the middle, 1 = from the very top).
     pub gradient_strength: f32,
     pub gradient_softness: f32,
+    /// Index into `mascot::SPECIES`.
+    pub species: usize,
     /// Index into `mascot::SKINS`.
     pub skin: usize,
-    /// Index into `mascot::ACCESSORIES` (0 = none).
+    /// Head/face accessory index into `mascot::ACCESSORIES` (0 = none).
     pub acc: usize,
+    /// Body/back/gear accessory index into `mascot::ACCESSORIES` (0 = none).
+    pub acc2: usize,
     pub audio_visualizer: bool,
     pub start_with_empty_shelf: bool,
     pub hud_brightness: bool,
@@ -200,8 +204,10 @@ impl Default for Settings {
             desk_on_taskbar: true,
             gradient_strength: 0.3,
             gradient_softness: 1.0,
+            species: 0,
             skin: 0,
             acc: 0,
+            acc2: 0,
             audio_visualizer: true,
             start_with_empty_shelf: false,
             hud_brightness: true,
