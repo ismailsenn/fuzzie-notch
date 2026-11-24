@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Fuzzie: a notch up top, a fox down below</title>
-<meta name="description" content="Fuzzie is a small, free notch for Windows: now playing with synced lyrics, a shelf, clipboard history, notifications, friends, and a fox on your taskbar that taps along as you type.">
-<meta property="og:title" content="Fuzzie: a notch up top, a fox down below">
-<meta property="og:description" content="Music, lyrics, shelf, clipboard and friends in a notch at the top of your screen, and a fox on your taskbar. Free and open source for Windows.">
+<title>Fuzzie: a notch up top, a fluffy buddy down below</title>
+<meta name="description" content="Fuzzie is a small, free notch for Windows: now playing with synced lyrics, a shelf, clipboard history, notifications, friends, and 5 fluffy Bongo-style animals on your taskbar.">
+<meta property="og:title" content="Fuzzie: a notch up top, a fluffy buddy down below">
+<meta property="og:description" content="Music, lyrics, shelf, clipboard and friends in a notch at the top of your screen, and 5 fluffy animals on your taskbar. Free and open source for Windows.">
 <meta property="og:image" content="https://ismailsenn.github.io/fuzzie-notch/img/music.png">
 <meta name="theme-color" content="#0b0810">
 <link rel="icon" href="favicon.ico">
@@ -253,8 +253,8 @@
   .sw.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .shuffle { cursor: pointer; font-weight: 700; font-size: 14px; padding: 9px 16px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.06); transition: transform .2s var(--spring), background .2s; }
   .shuffle:hover { background: rgba(255,255,255,.12); transform: rotate(-2deg) scale(1.04); }
-  .seg { display: inline-flex; padding: 4px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); margin-bottom: 18px; }
-  .seg button { cursor: pointer; border: 0; background: transparent; padding: 8px 16px; border-radius: 10px; font-weight: 700; font-size: 14.5px; color: var(--dim); transition: background .25s, color .25s; }
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 4px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); margin-bottom: 18px; }
+  .seg button { cursor: pointer; border: 0; background: transparent; padding: 8px 14px; border-radius: 10px; font-weight: 700; font-size: 14px; color: var(--dim); transition: background .25s, color .25s; }
   .seg button small { font-weight: 600; opacity: .7; margin-left: 4px; }
   .seg button.on { background: var(--fg); color: #120d14; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
@@ -383,8 +383,8 @@
 
   <div class="hero">
     <span class="badge"><b></b>Free &amp; open source for Windows 10 &amp; 11</span>
-    <h1 class="serif">A <span class="grad">notch</span> up top.<br>A <span class="grad">fox</span> down below.</h1>
-    <p class="lead">Fuzzie turns the top of your screen into a little notch for music, synced lyrics, files and friends, and puts a fox on your taskbar that taps along as you type.</p>
+    <h1 class="serif">A <span class="grad">notch</span> up top.<br>A <span class="grad">buddy</span> down below.</h1>
+    <p class="lead">Fuzzie turns the top of your screen into a little notch for music, synced lyrics, files and friends — and puts your choice of 5 fluffy animals on your taskbar to tap along as you type.</p>
     <div class="btns">
       <a class="btn primary" href="https://github.com/ismailsenn/fuzzie-notch/releases/latest/download/Fuzzie.exe">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
@@ -403,7 +403,7 @@
         <div class="win a"><i style="top:4cqw;width:60%"></i><i style="top:6.4cqw;width:80%"></i><i style="top:8.8cqw;width:45%"></i></div>
         <div class="win b"><i style="top:4cqw;width:70%"></i><i style="top:6.4cqw;width:50%"></i></div>
         <div class="scene-notch"><img id="shot" src="img/music.png" alt="The notch playing music with synced lyrics"></div>
-        <div class="type-hint"><kbd>Type</kbd> or <kbd>click</kbd> anywhere, the fox taps along</div>
+        <div class="type-hint"><kbd>Type</kbd> or <kbd>click</kbd> anywhere, your buddy taps along</div>
         <div class="presses" id="presses"></div>
         <img class="tb-fox deskfox" src="img/desk/rest.webp" alt="Desktop Fuzzie sitting on the taskbar">
         <div class="taskbar"><u></u><u></u><u></u><u></u><u></u><u></u><div class="tb-clock"><span id="tbClock">12:00</span><br><span id="tbDate"></span></div></div>
@@ -462,8 +462,8 @@
 
   <section id="desktop" class="reveal">
     <div class="kicker">Desktop Fuzzie</div>
-    <h2 class="serif">Your fox, <span class="grad">on your taskbar.</span></h2>
-    <p class="sub">Not just in the notch: Fuzzie can sit right on your taskbar and tap a paw on every key you press and every click, one paw and then the other. Try it, press any key.</p>
+    <h2 class="serif">Your buddy, <span class="grad">on your taskbar.</span></h2>
+    <p class="sub">Pick a Fluffy Fox, Mochi Cat, Puff Bunny, Chibi Shiba or Red Panda. It sits right on your taskbar and taps a paw on every key you press and every click. Try it — press any key.</p>
     <div class="desk">
       <div>
         <div class="desk-stage" id="deskStage">
@@ -482,11 +482,11 @@
       </div>
       <div>
         <ul class="ticks">
-          <li><i style="background:rgba(255,138,61,.16);color:#ff8a3d">&#9000;</i><span><b>Taps along</b>Every key press and click, left paw, right paw. Turn either off if you like.</span></li>
+          <li><i style="background:rgba(255,138,61,.16);color:#ff8a3d">&#9000;</i><span><b>Taps along &amp; smiles</b>Every key press and click, left paw, right paw. Type faster and your buddy breaks into a happy smile without any jitter.</span></li>
           <li><i style="background:rgba(61,155,255,.16);color:#3d9bff">&#8596;</i><span><b>Sits where you want</b>On the taskbar it slides sideways; take it off and drag it anywhere on your screen.</span></li>
-          <li><i style="background:rgba(138,92,255,.18);color:#a98bff">z</i><span><b>Naps when you're away</b>Eyes closed, a little "zZZ", and it's back the moment you are.</span></li>
-          <li><i style="background:rgba(255,77,141,.16);color:#ff4d8d">&#10022;</i><span><b>Wears your look</b>Same skin and accessory as the fox in your notch, at any size, glow optional.</span></li>
-          <li><i style="background:rgba(46,230,197,.15);color:#2ee6c5">&#9673;</i><span><b>Costs nothing</b>It holds still between taps, so while you're idle it's just a picture.</span></li>
+          <li><i style="background:rgba(138,92,255,.18);color:#a98bff">z</i><span><b>Cozy naps when you're away</b>Rests its head on tucked-in paws with a gentle sleep bubble and drifting "zZZ", then wakes the moment you're back.</span></li>
+          <li><i style="background:rgba(255,77,141,.16);color:#ff4d8d">&#10022;</i><span><b>Wears your look</b>Same animal, skin, and dual Head + Gear accessories as the notch, at any size, glow optional.</span></li>
+          <li><i style="background:rgba(46,230,197,.15);color:#2ee6c5">&#9673;</i><span><b>Costs nothing</b>Pure Direct2D vector shapes with zero sprite bloat and near-zero CPU when idle.</span></li>
         </ul>
         <div class="where">Turn it on in <b>Settings &rarr; Desktop Fuzzie &rarr; Fox on the desktop</b>.</div>
       </div>
@@ -522,7 +522,7 @@
   <section id="friends" class="reveal">
     <div class="kicker">Friends</div>
     <h2 class="serif">Better <span class="grad">with friends.</span></h2>
-    <p class="sub">No email, no password. Just swap a code and your foxes can meet.</p>
+    <p class="sub">No email, no password. Just swap a code and your buddies can meet.</p>
     <div class="friends">
       <div>
         <div class="code-card">
@@ -562,8 +562,8 @@
     <div class="faq">
       <details><summary>Is it free?</summary><p>Yes, and the code is open on GitHub.</p></details>
       <details><summary>Does it slow my PC down?</summary><p>No. It's written in Rust, uses a few MB of memory and almost no CPU while idle. The notch and the desktop fox only draw when something moves.</p></details>
-      <details><summary>What is Desktop Fuzzie?</summary><p>An optional fox that sits on your taskbar (or anywhere you drag it) and taps along as you type and click. Turn it on in Settings &rarr; Desktop Fuzzie.</p></details>
-      <details><summary>What do my friends see?</summary><p>Your name, your fox, whether you're online and the song you're playing. You can stop sharing your music, or go offline, in Settings.</p></details>
+      <details><summary>What is Desktop Fuzzie?</summary><p>An optional fluffy buddy (Fox, Cat, Bunny, Shiba or Red Panda) that sits on your taskbar and taps along as you type and click. Turn it on in Settings &rarr; Desktop Fuzzie.</p></details>
+      <details><summary>What do my friends see?</summary><p>Your name, your look, whether you're online and the song you're playing. You can stop sharing your music, or go offline, in Settings.</p></details>
       <details><summary>Do I need an account?</summary><p>No. Fuzzie makes a friend code for you on first start. There's no email or password.</p></details>
       <details><summary>Why does Windows warn me?</summary><p>The exe isn't signed yet, so SmartScreen doesn't know it. Click More info, then Run anyway. You can read every line of the source on GitHub.</p></details>
       <details><summary>How do I remove it?</summary><p>Settings &rarr; About &rarr; Uninstall Fuzzie. It removes your data, your friend code and the app itself.</p></details>
@@ -573,7 +573,7 @@
   <div class="final reveal">
     <div class="fx" id="finalFox"></div>
     <h2 class="serif">Ready when <span class="grad">you are.</span></h2>
-    <p class="sub">Free, tiny and fox-shaped.</p>
+    <p class="sub">Free, tiny and fluffy.</p>
     <div class="btns"><a class="btn primary" href="https://github.com/ismailsenn/fuzzie-notch/releases/latest/download/Fuzzie.exe">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
       Download for Windows</a></div>
