@@ -123,8 +123,13 @@ pub enum Hit {
     /// The tab on the right edge that goes to the next page.
     NextPage,
     ShelfFile(usize),
+    /// The small buttons on a hovered shelf file: take it off the shelf, show it in its folder.
+    ShelfRemove(usize),
+    ShelfReveal(usize),
     ShelfClear,
     Clip(usize),
+    /// The × on a hovered clipboard row.
+    ClipRemove(usize),
     ClipClear,
     /// The clipboard list area, for the mouse wheel.
     ClipList,
@@ -281,6 +286,7 @@ struct Fonts {
     lyric_small: IDWriteTextFormat,
     icons: IDWriteTextFormat,
     icons_small: IDWriteTextFormat,
+    icons_tiny: IDWriteTextFormat,
     icons_big: IDWriteTextFormat,
 }
 
@@ -433,6 +439,7 @@ impl Renderer {
                 lyric_small: format(&dw, text, 13.0, semi, left)?,
                 icons: format(&dw, icon_font, 16.0, normal, center)?,
                 icons_small: format(&dw, icon_font, 13.0, normal, center)?,
+                icons_tiny: format(&dw, icon_font, 9.0, normal, center)?,
                 icons_big: format(&dw, icon_font, 26.0, normal, center)?,
             };
             for tf in [&f.clock_small, &f.clock, &f.date, &f.title, &f.body, &f.small, &f.small_center, &f.small_right, &f.section, &f.big, &f.pill, &f.lyric, &f.lyric_small] {
@@ -1289,7 +1296,8 @@ impl Renderer {
                 let cx = bx.left + 6.0 + (i % cols) as f32 * cw;
                 let cy = bx.top + 4.0 + (i / cols) as f32 * 58.0;
                 let cell = D2D_RECT_F { left: cx, top: cy, right: cx + cw, bottom: cy + 56.0 };
-                let hot = s.hv(Hit::ShelfFile(i));
+                // The cell stays lit while the pointer is on one of its buttons.
+                let hot = (s.hv(Hit::ShelfFile(i)) + s.hv(Hit::ShelfRemove(i)) + s.hv(Hit::ShelfReveal(i))).min(1.0);
                 if hot > 0.005 {
                     unsafe {
                         let r = D2D1_ROUNDED_RECT { rect: cell, radiusX: 8.0, radiusY: 8.0 };
@@ -1313,6 +1321,12 @@ impl Renderer {
                 let nr = D2D_RECT_F { left: cell.left + 3.0, top: cy + 37.0, right: cell.right - 3.0, bottom: cy + 53.0 };
                 self.text(&file.name, &self.f.small_center, nr, self.fg(), a)?;
                 hits.push((cell, Hit::ShelfFile(i)));
+                if hot > 0.05 {
+                    let reveal = D2D_RECT_F { left: cell.left + 3.0, top: cy + 3.0, right: cell.left + 21.0, bottom: cy + 21.0 };
+                    let remove = D2D_RECT_F { left: cell.right - 21.0, top: cy + 3.0, right: cell.right - 3.0, bottom: cy + 21.0 };
+                    self.mini_button("\u{E838}", reveal, Hit::ShelfReveal(i), a * hot, s, hits)?;
+                    self.mini_button("\u{E711}", remove, Hit::ShelfRemove(i), a * hot, s, hits)?;
+                }
             }
             if s.shelf.len() > max_cells {
                 let i = max_cells - 1;
@@ -1337,7 +1351,7 @@ impl Renderer {
         for (row, (i, clip)) in s.clips.iter().enumerate().skip(s.clip_scroll).take(CLIP_ROWS).enumerate() {
             let y = 70.0 + row as f32 * 30.0;
             let r = D2D_RECT_F { left: rx - 4.0, top: y, right: rr, bottom: y + 28.0 };
-            let hot = s.hv(Hit::Clip(i));
+            let hot = (s.hv(Hit::Clip(i)) + s.hv(Hit::ClipRemove(i))).min(1.0);
             if hot > 0.005 {
                 unsafe {
                     let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 7.0, radiusY: 7.0 };
@@ -1363,14 +1377,20 @@ impl Renderer {
             let lr = D2D_RECT_F { left: rx + 28.0 + 2.0 * hot, top: y, right: rr - 44.0 - 22.0 * tag, bottom: y + 28.0 };
             self.text(&clip.label(), &self.f.body, lr, self.fg(), a)?;
             let tr = D2D_RECT_F { left: rr - 44.0, top: y, right: rr - 4.0, bottom: y + 28.0 };
+            // On hover the time gives way to a × that removes the row.
+            let x_on = hot * (1.0 - tag);
             if tag < 1.0 {
-                self.text(&clip.time, &self.f.small_right, tr, self.dim(), a * (1.0 - tag))?;
+                self.text(&clip.time, &self.f.small_right, tr, self.dim(), a * (1.0 - tag) * (1.0 - hot))?;
             }
             if tag > 0.0 {
                 let cr = D2D_RECT_F { left: rr - 66.0, top: y, right: rr - 4.0, bottom: y + 28.0 };
                 self.text("\u{2713} Copied", &self.f.small_right, cr, s.theme.accent, a * tag)?;
             }
             hits.push((r, Hit::Clip(i)));
+            if x_on > 0.05 {
+                let xr = D2D_RECT_F { left: rr - 26.0, top: y + 4.0, right: rr - 6.0, bottom: y + 24.0 };
+                self.icon_button_with("\u{E711}", &self.f.icons_tiny, xr, Hit::ClipRemove(i), self.fg(), a * x_on, s, hits)?;
+            }
         }
         // Scroll hint when more rows exist.
         if s.clips.len() > CLIP_ROWS {
@@ -1667,6 +1687,18 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn icon_button(&self, icon: &str, r: D2D_RECT_F, hit: Hit, c: [f32; 3], a: f32, s: &Scene, hits: &mut Hits) -> Result<()> {
         self.icon_button_with(icon, &self.f.icons, r, hit, c, a, s, hits)
+    }
+
+    /// A small dark round button drawn over a tile (shelf file corners).
+    fn mini_button(&self, icon: &str, r: D2D_RECT_F, hit: Hit, a: f32, s: &Scene, hits: &mut Hits) -> Result<()> {
+        let hot = s.hv(hit);
+        unsafe {
+            self.rt.FillEllipse(&ellipse(r), &self.brush([0.0, 0.0, 0.0], (0.55 + 0.25 * hot) * a)?);
+            self.rt.DrawEllipse(&ellipse(r), &self.brush([1.0, 1.0, 1.0], (0.18 + 0.3 * hot) * a)?, 1.0, None);
+        }
+        self.text(icon, &self.f.icons_tiny, r, [1.0, 1.0, 1.0], a)?;
+        hits.push((r, hit));
+        Ok(())
     }
 
     /// A round icon button whose hover circle fades in and out.

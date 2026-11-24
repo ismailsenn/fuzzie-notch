@@ -657,6 +657,12 @@ impl App {
         save(self, "friends_sent.png");
         self.friend_tab = 0;
         self.friend_view = 0;
+        // The shelf with a file and a clipboard row under the pointer.
+        self.page = 1;
+        self.page_pos = 1.0;
+        self.hover = vec![(Hit::ShelfFile(0), 1.0), (Hit::ShelfRemove(0), 1.0), (Hit::Clip(0), 1.0), (Hit::ClipRemove(0), 1.0)];
+        save(self, "shelf_hover.png");
+        self.hover.clear();
         // The music page with the volume slider open.
         self.page = 0;
         self.page_pos = 0.0;
@@ -1066,11 +1072,29 @@ impl App {
                     open_path(&file.path);
                 }
             }
+            Hit::ShelfRemove(f) => {
+                if f < self.shelf.files.len() {
+                    self.shelf.remove(f);
+                    self.save_store();
+                }
+            }
+            Hit::ShelfReveal(f) => {
+                if let Some(file) = self.shelf.files.get(f) {
+                    reveal_path(&file.path);
+                }
+            }
             Hit::ShelfClear => {
                 self.shelf.files.clear();
                 self.save_store();
             }
             Hit::Clip(c) => self.clips.restore(self.hwnd, c),
+            Hit::ClipRemove(c) => {
+                if c < self.clips.items.len() {
+                    self.clips.remove(c);
+                    self.clip_scroll = self.clip_scroll.min(self.clips.items.len().saturating_sub(CLIP_ROWS));
+                    self.save_store();
+                }
+            }
             Hit::ClipClear => {
                 self.clips.clear();
                 self.clip_scroll = 0;
@@ -1562,6 +1586,14 @@ fn on_drag(event: DragEvent) {
 fn open_path(path: &std::path::Path) {
     unsafe {
         ShellExecuteW(None, w!("open"), &HSTRING::from(path.as_os_str()), None, None, SW_SHOWNORMAL);
+    }
+}
+
+/// Opens Explorer on the file's folder with the file selected.
+fn reveal_path(path: &std::path::Path) {
+    let args = HSTRING::from(format!("/select,\"{}\"", path.display()));
+    unsafe {
+        ShellExecuteW(None, w!("open"), w!("explorer.exe"), &args, None, SW_SHOWNORMAL);
     }
 }
 
