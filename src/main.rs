@@ -75,9 +75,11 @@ fn main() -> Result<()> {
     }
 
     let settings = settings::Settings::load();
-    if settings.start_with_windows {
-        // Refresh the registry entry in case the exe moved.
-        autostart::set(true);
+    if !snapshot && settings.start_with_windows {
+        // Refresh autostart in the background so UI startup never waits on schtasks.
+        let _ = std::thread::Builder::new().name("autostart".into()).spawn(|| {
+            autostart::set(true);
+        });
     }
     let r = window::run(settings);
     wipe::finish();

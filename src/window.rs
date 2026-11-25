@@ -998,6 +998,20 @@ impl App {
             redraw = true; // restarts or stops the mascot's frame timer
             unsafe {
                 let _ = ShowWindow(self.hwnd, if hide { SW_HIDE } else { SW_SHOWNOACTIVATE });
+                if !hide {
+                    use windows::Win32::UI::WindowsAndMessaging::{
+                        SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+                    };
+                    let _ = SetWindowPos(
+                        self.hwnd,
+                        Some(HWND_TOPMOST),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                    );
+                }
             }
         }
         deskfox::set_state(self.sleeping, self.hidden, self.settings.desk_dance && playing && !self.sleeping);
@@ -1690,9 +1704,15 @@ fn idle_secs() -> u32 {
     }
 }
 
-/// True when the foreground window covers its whole monitor (games, videos).
+/// True when a genuine full-screen app (game, video, F11) covers the notch's monitor.
+/// Maximized desktop windows (even with an auto-hidden taskbar) keep WS_CAPTION /
+/// WS_THICKFRAME and must not hide the notch.
 fn fullscreen_app_in_front(own: HWND) -> bool {
     unsafe {
+        use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongW, IsZoomed, GWL_STYLE, WS_CAPTION, WS_THICKFRAME,
+        };
         let fg = GetForegroundWindow();
         if fg.0.is_null() || fg == own {
             return false;
@@ -1700,16 +1720,46 @@ fn fullscreen_app_in_front(own: HWND) -> bool {
         let mut buf = [0u16; 64];
         let n = GetClassNameW(fg, &mut buf) as usize;
         let class = String::from_utf16_lossy(&buf[..n]);
-        // The desktop and the shell are not apps.
-        if matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" | "FuzzieSettings") {
+        // The desktop, shell surfaces and Fuzzie's own windows are not full-screen apps.
+        if matches!(
+            class.as_str(),
+            "Progman"
+                | "WorkerW"
+                | "Shell_TrayWnd"
+                | "Shell_SecondaryTrayWnd"
+                | "Windows.UI.Core.CoreWindow"
+                | "XamlExplorerHostIslandWindow"
+                | "FuzzieSettings"
+                | "FuzzieDeskFox"
+        ) {
+            return false;
+        }
+        // Only hide when the full-screen window is on the same monitor as the notch.
+        let fg_mon = MonitorFromWindow(fg, MONITOR_DEFAULTTOPRIMARY);
+        let own_mon = MonitorFromWindow(own, MONITOR_DEFAULTTOPRIMARY);
+        if fg_mon != own_mon {
+            return false;
+        }
+        // A normal maximized window with a frame/caption is not a full-screen app
+        // (even when the taskbar is set to auto-hide so its bounds reach the bottom).
+        let style = GetWindowLongW(fg, GWL_STYLE) as u32;
+        if IsZoomed(fg).as_bool() && (style & (WS_CAPTION.0 | WS_THICKFRAME.0)) != 0 {
             return false;
         }
         let mut r = windows::Win32::Foundation::RECT::default();
-        if GetWindowRect(fg, &mut r).is_err() {
+        if DwmGetWindowAttribute(
+            fg,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            &mut r as *mut _ as *mut _,
+            std::mem::size_of::<windows::Win32::Foundation::RECT>() as u32,
+        )
+        .is_err()
+            && GetWindowRect(fg, &mut r).is_err()
+        {
             return false;
         }
         let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-        if !GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTOPRIMARY), &mut mi).as_bool() {
+        if !GetMonitorInfoW(fg_mon, &mut mi).as_bool() {
             return false;
         }
         let m = mi.rcMonitor;
@@ -1937,8 +1987,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             LRESULT(0)
         }
         m if m == taskbar_created() => {
-            // Explorer restarted: the tray icon must be added again.
+            // Explorer restarted or just finished starting at logon: re-add
+            // the tray icon and re-anchor the notch / desktop fox to the taskbar.
             let _ = tray::add(hwnd);
+            with_app(|a| a.redraw());
+            deskfox::keep_on_screen();
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wp, lp),

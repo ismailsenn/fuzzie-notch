@@ -643,11 +643,28 @@ fn base_scale(hwnd: HWND) -> f32 {
 
 /// The zoom set by dragging the window's edges (f32 bits).
 static ZOOM: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000);
-const ZOOM_MIN: f32 = 0.6;
-const ZOOM_MAX: f32 = 1.8;
+const ZOOM_MIN: f32 = 0.7;
+const ZOOM_MAX: f32 = 1.0;
 
 fn zoom() -> f32 {
     f32::from_bits(ZOOM.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// Largest zoom that stays tasteful (<= ZOOM_MAX) and fits comfortably on `hwnd`'s monitor.
+fn max_zoom(hwnd: HWND) -> f32 {
+    unsafe {
+        use windows::Win32::Graphics::Gdi::MonitorFromWindow;
+        let mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
+        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if !GetMonitorInfoW(mon, &mut mi).as_bool() {
+            return ZOOM_MAX;
+        }
+        let r = mi.rcWork;
+        let base = base_scale(hwnd);
+        let fit_w = ((r.right - r.left) as f32 * 0.92) / (WIN_W * base);
+        let fit_h = ((r.bottom - r.top) as f32 * 0.92) / (WIN_H * base);
+        ZOOM_MAX.min(fit_w.min(fit_h)).max(ZOOM_MIN)
+    }
 }
 
 /// Physical pixels per layout unit.
@@ -691,10 +708,9 @@ impl SettingsWindow {
                 Some(hinstance.into()),
                 None,
             )?;
-            // The last size, but never larger than the screen.
+            // The last size, capped by ZOOM_MAX and the monitor's work area.
             let saved = window::settings_snapshot().map_or(1.0, |s| s.settings_zoom);
-            let fit = ((r.right - r.left) as f32 / (WIN_W * base_scale(hwnd))).min((r.bottom - r.top) as f32 / (WIN_H * base_scale(hwnd)));
-            let z = saved.clamp(ZOOM_MIN, ZOOM_MAX).min(fit.max(ZOOM_MIN));
+            let z = saved.clamp(ZOOM_MIN, max_zoom(hwnd));
             ZOOM.store(z.to_bits(), std::sync::atomic::Ordering::Relaxed);
             let s = scale_of(hwnd);
             let (w, h) = ((WIN_W * s) as i32, (WIN_H * s) as i32);
@@ -2419,7 +2435,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             Some(LRESULT(0))
         }
         // No system frame: the page fills the whole window (WS_THICKFRAME is only for resizing).
-        windows::Win32::UI::WindowsAndMessaging::WM_NCCALCSIZE if wp.0 != 0 => Some(LRESULT(0)),
+        windows::Win32::UI::WindowsAndMessaging::WM_NCCALCSIZE => Some(LRESULT(0)),
+        // Suppress DefWindowProc's classic non-client frame repaint when switching windows.
+        windows::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE if !IsIconic(hwnd).as_bool() => Some(LRESULT(1)),
+        windows::Win32::UI::WindowsAndMessaging::WM_NCPAINT => Some(LRESULT(0)),
+        windows::Win32::UI::WindowsAndMessaging::WM_ERASEBKGND => Some(LRESULT(1)),
+        windows::Win32::UI::WindowsAndMessaging::WM_NCLBUTTONDBLCLK => Some(LRESULT(0)),
+        windows::Win32::UI::WindowsAndMessaging::WM_GETMINMAXINFO => {
+            use windows::Win32::UI::WindowsAndMessaging::MINMAXINFO;
+            let mmi = &mut *(lp.0 as *mut MINMAXINFO);
+            let base = base_scale(hwnd);
+            let zmax = max_zoom(hwnd);
+            mmi.ptMinTrackSize = POINT { x: (WIN_W * base * ZOOM_MIN).round() as i32, y: (WIN_H * base * ZOOM_MIN).round() as i32 };
+            let max_pt = POINT { x: (WIN_W * base * zmax).round() as i32, y: (WIN_H * base * zmax).round() as i32 };
+            mmi.ptMaxTrackSize = max_pt;
+            mmi.ptMaxSize = max_pt;
+            Some(LRESULT(0))
+        }
         windows::Win32::UI::WindowsAndMessaging::WM_SIZING => {
             // Keep the page's shape and follow the edge being dragged.
             use windows::Win32::UI::WindowsAndMessaging::{WMSZ_BOTTOM, WMSZ_TOP};
@@ -2431,7 +2463,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             } else {
                 (r.right - r.left) as f32 / (WIN_W * base)
             }
-            .clamp(ZOOM_MIN, ZOOM_MAX);
+            .clamp(ZOOM_MIN, max_zoom(hwnd));
             let (w, h) = ((WIN_W * base * z).round() as i32, (WIN_H * base * z).round() as i32);
             use windows::Win32::UI::WindowsAndMessaging::{WMSZ_BOTTOMLEFT, WMSZ_LEFT, WMSZ_TOPLEFT, WMSZ_TOPRIGHT};
             if matches!(edge, WMSZ_LEFT | WMSZ_TOPLEFT | WMSZ_BOTTOMLEFT) {
