@@ -104,6 +104,8 @@ pub struct Settings {
     pub show_mascot: bool,
     /// Skin and accessory glow effects for the notch / UI mascot (independent of Desktop Fuzzie).
     pub mascot_glow: bool,
+    /// Notch mascot dances with floating notes while music plays.
+    pub mascot_dance: bool,
     pub nap_enabled: bool,
     pub nap_after_secs: u32,
     pub nap_while_music: bool,
@@ -123,6 +125,8 @@ pub struct Settings {
     pub desk_lock: bool,
     /// Skin and accessory glows on the desktop fox.
     pub desk_glow: bool,
+    /// Desktop Fuzzie dances with floating notes while music plays.
+    pub desk_dance: bool,
     /// The desktop fox wears the chosen accessory.
     pub desk_acc: bool,
     /// Sits on the taskbar (dragging moves it sideways only).
@@ -185,6 +189,7 @@ impl Default for Settings {
             glass: false,
             show_mascot: true,
             mascot_glow: true,
+            mascot_dance: true,
             nap_enabled: true,
             nap_after_secs: 60,
             nap_while_music: true,
@@ -203,6 +208,7 @@ impl Default for Settings {
             social_name: String::new(),
             settings_zoom: 1.0,
             desk_glow: true,
+            desk_dance: true,
             desk_acc: true,
             desk_on_taskbar: true,
             gradient_strength: 0.3,

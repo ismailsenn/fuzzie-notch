@@ -507,7 +507,7 @@ impl App {
             }
         }
         // Smooth music-dance & floating notes fade-in / fade-out for the notch mascot.
-        let music_target = if self.media.lock().is_ok_and(|m| m.playing) && !self.sleeping { 1.0 } else { 0.0 };
+        let music_target = if self.settings.mascot_dance && self.media.lock().is_ok_and(|m| m.playing) && !self.sleeping { 1.0 } else { 0.0 };
         if self.music_mix < music_target {
             self.music_mix = (self.music_mix + dt * 1.55).min(music_target);
             moving = true;
@@ -1000,7 +1000,7 @@ impl App {
                 let _ = ShowWindow(self.hwnd, if hide { SW_HIDE } else { SW_SHOWNOACTIVATE });
             }
         }
-        deskfox::set_state(self.sleeping, self.hidden, playing && !self.sleeping);
+        deskfox::set_state(self.sleeping, self.hidden, self.settings.desk_dance && playing && !self.sleeping);
         // While the frame timer runs, it draws soon anyway.
         if (playing || redraw || self.music_mix > 0.005) && self.frame_ms == 0 {
             self.redraw();

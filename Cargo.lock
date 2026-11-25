@@ -87,7 +87,7 @@ dependencies = [
 
 [[package]]
 name = "fuzzie"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "embed-resource",
  "png",
