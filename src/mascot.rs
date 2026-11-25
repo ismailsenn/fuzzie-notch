@@ -667,6 +667,8 @@ pub struct BongoState {
     pub yarn_mix: f32,
     /// Yarn ball state in mascot units: [x, y, rotation_deg, squash].
     pub yarn_ball: [f32; 4],
+    /// Smooth music-playing dance & floating notes blend (0 silent .. 1 vibing).
+    pub music_mix: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -684,6 +686,7 @@ struct Bongo {
     sleep_mix: f32,
     yarn_mix: f32,
     yarn_ball: [f32; 4],
+    music_mix: f32,
 }
 
 /// The mascot being drawn has its glows turned off.
@@ -696,8 +699,19 @@ thread_local! {
     static BONGO: std::cell::Cell<Option<Bongo>> = const { std::cell::Cell::new(None) };
     // Set while drawing a Look with glow_off = true (notch / UI mascot glow toggle).
     static LOOK_GLOW_OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // Smooth music groove intensity (0..1) for non-bongo draws (notch mascot).
+    static MUSIC_MIX: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
     // What [`fox`] draws: 1 the mascot itself, 2 accessory parts behind it, 4 accessory parts on it.
     static LAYERS: std::cell::Cell<u8> = const { std::cell::Cell::new(7) };
+}
+
+/// Draws the notch mascot with smooth music-dance sway, expression and floating notes (`music_mix` 0..1).
+#[allow(clippy::too_many_arguments)]
+pub fn draw_music(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx: f32, cy: f32, size: f32, a: f32, sleeping: bool, t: f32, music_mix: f32) -> Result<()> {
+    let prev = MUSIC_MIX.with(|c| c.replace(music_mix));
+    let r = draw(rt, factory, look, cx, cy, size, a, sleeping, t);
+    MUSIC_MIX.with(|c| c.set(prev));
+    r
 }
 
 /// The desktop mascot: articulated Bongo Cat paws, smooth squash/ear bounce, sleep/wake & yarn play.
@@ -718,6 +732,7 @@ pub fn draw_bongo(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Look, cx
             sleep_mix: st.sleep_mix,
             yarn_mix: st.yarn_mix,
             yarn_ball: st.yarn_ball,
+            music_mix: st.music_mix,
         }))
     });
     let r = draw(rt, factory, look, cx, cy, size, 1.0, sleeping, st.zt);
@@ -743,6 +758,7 @@ pub fn draw_head(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, species: usize,
             sleep_mix: 0.0,
             yarn_mix: 0.0,
             yarn_ball: [0.0; 4],
+            music_mix: 0.0,
         }))
     });
     let r = draw(rt, factory, Look::new(species, skin, 0, 0), cx, cy, size, 1.0, false, 0.0);
@@ -784,6 +800,7 @@ pub fn draw_still_hype(rt: &ID2D1RenderTarget, factory: &ID2D1Factory, look: Loo
             sleep_mix: if sleeping { 1.0 } else { 0.0 },
             yarn_mix: 0.0,
             yarn_ball: [0.0; 4],
+            music_mix: 0.0,
         }))
     });
     let r = draw(rt, factory, look, cx, cy, size, a, sleeping, 0.0);
@@ -1151,19 +1168,25 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
     let sm = sm_raw * sm_raw * (3.0 - 2.0 * sm_raw); // butter-smooth cubic ease-in-out
     let ym_raw = bongo.map_or(0.0, |b| b.yarn_mix);
     let ym = ym_raw * ym_raw * (3.0 - 2.0 * ym_raw); // smoothstep organic roll
+    let mm_raw = bongo.map_or(MUSIC_MIX.with(|c| c.get()), |b| b.music_mix);
+    let mm = mm_raw * mm_raw * (3.0 - 2.0 * mm_raw); // smoothstep music groove
+    let groove = mm * (1.0 - sm) * (1.0 - ym * 0.7);
+    let beat = t * 5.2;
     let yarn_ball = bongo.map_or([0.18, -0.30, 0.0, 0.0], |b| b.yarn_ball);
 
-    // Calm breathing + low-pass smoothed squash + organic sleep/yarn transitions.
+    // Calm breathing + low-pass smoothed squash + organic sleep/yarn/music transitions.
     let breathe = (t * (2.0 - sm * 0.65)).sin();
-    let sx = 1.0 + squash * 0.045 + sm * 0.04 - breathe * (0.007 + sm * 0.011);
-    let sy = 1.0 - squash * 0.045 - sm * 0.05 + breathe * (0.012 + sm * 0.016);
+    let beat_sq = groove * 0.030 * (beat * 2.0).sin();
+    let sx = 1.0 + squash * 0.045 + sm * 0.04 + beat_sq - breathe * (0.007 + sm * 0.011);
+    let sy = 1.0 - squash * 0.045 - sm * 0.05 - beat_sq + breathe * (0.012 + sm * 0.016);
     let body = tr(0.0, -info.desk_y) * Matrix3x2::scale(sx, sy) * tr(0.0, info.desk_y);
 
-    // Head smoothly slumps onto tucked paws when sleeping, or reclines back onto the
-    // left side of the taskbar looking up-right at the bouncing yarn ball!
+    // Head smoothly slumps onto tucked paws when sleeping, reclines for yarn play,
+    // or sways happily to the rhythm while music plays!
     let hx = -0.19 * ym;
-    let bob = sm * 0.082 + ym * 0.13 + breathe * (0.010 + sm * 0.004);
-    let awake_sway = (t * 0.85).sin() * 1.4 + head_bob * 1.4;
+    let music_bob = -groove * 0.022 * (beat * 2.0).sin().abs();
+    let bob = sm * 0.082 + ym * 0.13 + music_bob + breathe * (0.010 + sm * 0.004);
+    let awake_sway = (t * 0.85).sin() * 1.4 + head_bob * 1.4 + groove * 7.8 * beat.sin();
     let sleep_sway = 6.2 + (t * 0.7).sin() * 0.7;
     let yarn_sway = -28.0 + (t * 1.1).sin() * 1.6 + (yarn_ball[0] - 0.18) * 14.0;
     let sway = (awake_sway * (1.0 - sm) + sleep_sway * sm) * (1.0 - ym) + yarn_sway * ym;
@@ -1180,10 +1203,10 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
     }
 
     if show & 1 != 0 {
-        // Calm, weighted tail sway (always drawn unless head_only app icon).
+        // Calm, weighted tail sway (happier wag while grooving to music).
         if !head_only && !shinobi::tails(p, sk, &fur, t, sm > 0.5)? {
-            let phase = t * (1.05 - sm * 0.60);
-            let amp = (3.6 + hype * 1.2) * (1.0 - sm) + 1.4 * sm;
+            let phase = t * (1.05 - sm * 0.60 + groove * 0.55);
+            let amp = (3.6 + hype * 1.2 + groove * 2.6) * (1.0 - sm) + 1.4 * sm;
             let wag = (phase.sin() + 0.22 * (phase * 2.0 - 0.6).sin()) * amp;
             species::draw_tail(p, info.id, sk, &fur, body, wag, sm, ym)?;
         }
@@ -1200,12 +1223,14 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
 
         shinobi::hair_back(p, sk, head)?;
 
-        // Ears (gentle idle sway + occasional soft single-ear flick + tap bounce).
+        // Ears (gentle idle sway + rhythmic music bounce + occasional soft single-ear flick + tap bounce).
         if acc != HELMET && acc2 != HELMET {
             let (tw_side, tw) = twitch(t);
             let awake_k = 1.0 - sm;
-            let idle_l = awake_k * ((t * 1.05 - 0.9).sin() * 1.6 + if tw_side < 0.0 { tw * 0.65 } else { 0.0 });
-            let idle_r = awake_k * ((t * 1.05 + 0.9).sin() * 1.6 + if tw_side > 0.0 { tw * 0.65 } else { 0.0 });
+            let music_el = groove * 5.8 * (beat - 0.5).sin();
+            let music_er = groove * 5.8 * (beat + 0.5).sin();
+            let idle_l = awake_k * ((t * 1.05 - 0.9).sin() * 1.6 + if tw_side < 0.0 { tw * 0.65 } else { 0.0 }) + music_el;
+            let idle_r = awake_k * ((t * 1.05 + 0.9).sin() * 1.6 + if tw_side > 0.0 { tw * 0.65 } else { 0.0 }) + music_er;
             species::draw_ears(p, info.id, sk, &fur, head, [idle_l + ear_bounce[0], idle_r + ear_bounce[1]], sm)?;
         }
 
@@ -1218,7 +1243,7 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
         p.stroke(head, &hg, p.line, 1.0, p.lw);
         species::draw_whiskers(p, info.id, head);
         shinobi::over_head(p, sk, head)?;
-        face(p, info, sk, head, sm, ym, yarn_ball, hype, t, breathe)?;
+        face(p, info, sk, head, sm, ym, yarn_ball, hype, groove, t, breathe)?;
         shinobi::over_eyes(p, sk, head)?;
         if is_bot {
             draw_bot_gear(p, head, body, t)?;
@@ -1245,6 +1270,12 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
         front_fx(p, sk, t)?;
     }
 
+    // Floating musical notes while music plays (smoothly fades in and out with mm).
+    let note_vis = mm * (1.0 - sm);
+    if !head_only && show & 1 != 0 && note_vis > 0.01 {
+        draw_music_notes(p, note_vis, zt, size)?;
+    }
+
     let z_vis = ((sm - 0.55) / 0.45).clamp(0.0, 1.0);
     if z_vis > 0.01 && bongo.is_some() {
         let z = p.path("zed", ZED)?;
@@ -1267,6 +1298,36 @@ fn fox(p: &Pen, info: &SpeciesInfo, sk: &Skin, acc: usize, acc2: usize, is_bot: 
             let w = (0.05f32).max(1.2 / size) / s;
             p.stroke(m, &z, c, (u * PI).sin() * 0.95 * z_vis, w);
         }
+    }
+    Ok(())
+}
+
+/// Floating musical eighth notes rising gently beside the mascot while music plays.
+fn draw_music_notes(p: &Pen, vis: f32, t: f32, size: f32) -> Result<()> {
+    let flag = p.path("music_flag", &[M(0.32, -0.95), Q(0.95, -0.68, 0.72, -0.18), O])?;
+    let colours: [[f32; 3]; 3] = [[1.0, 0.62, 0.34], [1.0, 0.48, 0.72], [0.68, 0.56, 1.0]];
+    let n = if p.small { 2 } else { 3 };
+    for i in 0..n {
+        let u = (t * 0.42 + i as f32 / n as f32).fract();
+        let side = if i % 2 == 0 { 1.0f32 } else { -1.0 };
+        let base_x = if p.small { 0.56 } else { 0.64 };
+        let x = side * (base_x + u * 0.16) + (u * PI * 2.0 + i as f32).sin() * 0.055;
+        let y = if p.small { -0.05 - u * 0.62 } else { -0.12 - u * 0.66 };
+        let s = if p.small { 0.115 + u * 0.03 } else { 0.095 + u * 0.035 };
+        let tilt = side * 12.0 + (t * 4.0 + i as f32 * 2.0).sin() * 8.0;
+        let a = (u * PI).sin().powf(0.75) * vis;
+        if a < 0.02 {
+            continue;
+        }
+        let m = put(x, y, s, tilt);
+        let c = colours[i % colours.len()];
+        let w = (0.20f32).max(1.4 / (size * s));
+        // Subtle dark backing for crisp readability on light wallpapers, then bright note.
+        p.fill_el(rot(-22.0, 0.0, 0.0) * m, 0.0, 0.0, 0.48, 0.36, INK, 0.55 * a);
+        p.seg(m, 0.32, -0.05, 0.32, -0.95, INK, 0.55 * a, w + 0.16);
+        p.fill_el(rot(-22.0, 0.0, 0.0) * m, 0.0, 0.0, 0.40, 0.29, c, a);
+        p.seg(m, 0.32, -0.05, 0.32, -0.95, c, a, w);
+        p.stroke(m, &flag, c, a, w * 0.95);
     }
     Ok(())
 }
@@ -1359,12 +1420,13 @@ fn tap_burst(p: &Pen, x: f32, y: f32, _side: f32, size: f32, a: f32) -> Result<(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn face(p: &Pen, info: &SpeciesInfo, sk: &Skin, head: Matrix3x2, sleep_mix: f32, yarn_mix: f32, yarn_ball: [f32; 4], hype: f32, t: f32, breathe: f32) -> Result<()> {
+fn face(p: &Pen, info: &SpeciesInfo, sk: &Skin, head: Matrix3x2, sleep_mix: f32, yarn_mix: f32, yarn_ball: [f32; 4], hype: f32, groove: f32, t: f32, breathe: f32) -> Result<()> {
     let asleep = sleep_mix >= 0.82;
-    // Blush (glows rosier as typing speed rises or while playing with yarn).
+    let vibing = groove > 0.55 && !asleep && yarn_mix < 0.3;
+    // Blush (glows rosier as typing speed rises, playing with yarn, or vibing to music).
     if sk.pattern != Pattern::Hearts {
         let pink = [1.0, 0.48, 0.62];
-        let boost = ((hype * 1.25).max(yarn_mix * 0.65)).min(1.0) * (1.0 - sleep_mix * 0.5);
+        let boost = ((hype * 1.25).max(yarn_mix * 0.65).max(groove * 0.55)).min(1.0) * (1.0 - sleep_mix * 0.5);
         for side in [-1.0f32, 1.0] {
             let (bx, by) = ((info.eye_x + 0.115) * side, info.eye_y + 0.095);
             if p.small || glow_off() {
@@ -1415,7 +1477,7 @@ fn face(p: &Pen, info: &SpeciesInfo, sk: &Skin, head: Matrix3x2, sleep_mix: f32,
             p.stroke(tr(ex, ey) * head, &happy_eye_big, sk.eyes, 1.0, p.lw * 1.25);
             continue;
         }
-        if hype > 0.28 && sleep_mix < 0.25 {
+        if (hype > 0.28 || vibing) && sleep_mix < 0.25 {
             p.stroke(tr(ex, ey) * head, &happy_eye, sk.eyes, 1.0, p.lw * 1.15);
             continue;
         }

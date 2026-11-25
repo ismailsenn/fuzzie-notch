@@ -158,6 +158,9 @@ struct Desk {
     hype: f32,
     /// Smooth sleep/wake blend (0 awake .. 1 deeply asleep).
     sleep_mix: f32,
+    /// Music playing flag and smooth dance/notes blend (0 silent .. 1 vibing).
+    music: bool,
+    music_mix: f32,
     /// Playful lying-on-back yarn-ball mode state.
     yarn_mode: bool,
     yarn_mix: f32,
@@ -250,10 +253,11 @@ pub fn sync(s: &Settings) {
     }
 }
 
-/// Napping and hiding follow the notch (no input for a while; a full-screen app in front).
-pub fn set_state(sleeping: bool, hidden: bool) {
+/// Napping, hiding and music state follow the notch.
+pub fn set_state(sleeping: bool, hidden: bool, music: bool) {
     with_desk(|d| {
         let sleeping = sleeping && d.nap_on;
+        let music = music && !sleeping;
         if d.hidden != hidden {
             d.hidden = hidden;
             unsafe {
@@ -274,6 +278,10 @@ pub fn set_state(sleeping: bool, hidden: bool) {
             d.schedule_blink();
             d.update_anim();
             d.draw();
+        }
+        if d.music != music {
+            d.music = music;
+            d.update_anim();
         }
     });
 }
@@ -447,6 +455,8 @@ fn open(s: &Settings) -> Result<()> {
             ear_bounce: [0.0; 2],
             hype: 0.0,
             sleep_mix: 0.0,
+            music: false,
+            music_mix: 0.0,
             yarn_mode: false,
             yarn_mix: 0.0,
             yarn_x: 0.18,
@@ -598,6 +608,7 @@ impl Desk {
     fn settling(&self) -> bool {
         let sleep_target = if self.sleeping { 1.0 } else { 0.0 };
         let yarn_target = if self.yarn_mode && !self.sleeping { 1.0 } else { 0.0 };
+        let music_target = if self.music && !self.sleeping { 1.0 } else { 0.0 };
         self.squash > 0.005
             || self.squash_target > 0.005
             || self.head_bob.abs() > 0.005
@@ -606,6 +617,7 @@ impl Desk {
             || self.hype > 0.005
             || (self.sleep_mix - sleep_target).abs() > 0.005
             || (self.yarn_mix - yarn_target).abs() > 0.005
+            || (self.music_mix - music_target).abs() > 0.005
             || self.yarn_mode
     }
 
@@ -632,6 +644,14 @@ impl Desk {
             self.sleep_mix = (self.sleep_mix + dt * sleep_rate).min(sleep_target);
         } else if self.sleep_mix > sleep_target {
             self.sleep_mix = (self.sleep_mix - dt * sleep_rate).max(sleep_target);
+        }
+
+        // Smooth 64 FPS music dance & floating notes fade-in / fade-out.
+        let music_target = if self.music && !self.sleeping { 1.0 } else { 0.0 };
+        if self.music_mix < music_target {
+            self.music_mix = (self.music_mix + dt * 1.55).min(music_target);
+        } else if self.music_mix > music_target {
+            self.music_mix = (self.music_mix - dt * 1.35).max(music_target);
         }
 
         // Smooth organic roll into/out of yarn-ball play mode (~0.55s).
@@ -729,7 +749,7 @@ impl Desk {
             0
         } else if self.settling() {
             TRANS_MS
-        } else if self.anim_on {
+        } else if self.anim_on || self.music_mix > 0.005 {
             ANIM_MS
         } else if self.sleeping {
             ZZZ_MS
@@ -780,6 +800,7 @@ impl Desk {
                 sleep_mix: self.sleep_mix,
                 yarn_mix: self.yarn_mix,
                 yarn_ball: [self.yarn_x, self.yarn_y, self.yarn_rot, self.yarn_squash],
+                music_mix: self.music_mix,
             };
             let _ = mascot::draw_bongo(&self.rt, &self.factory, look, cx, cy, self.size, self.sleeping, st);
             if self.rt.EndDraw(None, None).is_err() {
@@ -921,6 +942,21 @@ pub fn snapshot(dir: &std::path::Path, s: &Settings) {
         d.yarn_mix = 0.0;
         d.yarn_squash = 0.0;
         d.sleep_mix = 0.0;
+        // Music dance + floating notes pose on Desktop Fuzzie.
+        d.forced = Some([0.0, 0.0]);
+        d.acc = 0;
+        d.sleeping = false;
+        d.music = true;
+        d.music_mix = 1.0;
+        d.anim_on = true;
+        d.draw();
+        let px = unsafe { std::slice::from_raw_parts(d.bits, (d.width * d.height * 4) as usize) };
+        if let Some(png) = crate::image::encode_png(d.width as u32, d.height as u32, px) {
+            let _ = std::fs::write(dir.join("desk_music.png"), png);
+        }
+        d.music = false;
+        d.music_mix = 0.0;
+        d.anim_on = s.desk_anim;
         // The shinobi pack: every skin bare, then every accessory on one of them.
         let pack = &crate::mascot::PACKS[1];
         let first = pack.skins.start;
@@ -1013,6 +1049,7 @@ fn web_frames(dir: &std::path::Path) {
             sleep_mix: if sleeping { 1.0 } else { 0.0 },
             yarn_mix: if yarn { 1.0 } else { 0.0 },
             yarn_ball: [0.18, -0.28, 22.0, if yarn { 0.35 } else { 0.0 }],
+            music_mix: 0.0,
         };
         if let Some(png) = fox_png(big, |rt, f| mascot::draw_bongo(rt, f, mascot::Look::default(), cx, cy, size, sleeping, st)) {
             let _ = std::fs::write(dir.with_file_name(format!("bongo_{name}.png")), png);

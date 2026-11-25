@@ -130,6 +130,8 @@ struct App {
     moving: Option<(POINT, (i32, i32))>,
     /// The mascot is napping (no input for a while).
     sleeping: bool,
+    /// Smooth music-dance & floating notes blend (0 silent .. 1 vibing) for the notch mascot.
+    music_mix: f32,
     /// Hidden because a full-screen app is in front.
     hidden: bool,
     /// Interval of the frame clock in ms (0 = off).
@@ -268,6 +270,7 @@ pub fn run(settings: Settings) -> Result<()> {
             press: None,
             moving: None,
             sleeping: false,
+            music_mix: 0.0,
             hidden: false,
             frame_ms: 0,
             clock: FrameClock::new(hwnd, WM_FRAME),
@@ -503,6 +506,15 @@ impl App {
                 moving = true;
             }
         }
+        // Smooth music-dance & floating notes fade-in / fade-out for the notch mascot.
+        let music_target = if self.media.lock().is_ok_and(|m| m.playing) && !self.sleeping { 1.0 } else { 0.0 };
+        if self.music_mix < music_target {
+            self.music_mix = (self.music_mix + dt * 1.55).min(music_target);
+            moving = true;
+        } else if self.music_mix > music_target {
+            self.music_mix = (self.music_mix - dt * 1.35).max(music_target);
+            moving = true;
+        }
         self.animating = moving;
     }
 
@@ -608,6 +620,7 @@ impl App {
             minimal: s.idle_style == IdleStyle::Minimal,
             visualizer: s.audio_visualizer,
             mascot: s.show_mascot.then_some((crate::mascot::Look::new(s.species, s.skin, s.acc, s.acc2).with_glow(s.mascot_glow), self.sleeping)),
+            mascot_music: self.music_mix,
             hover: &self.hover,
             flash: self.flash,
         };
@@ -677,6 +690,7 @@ impl App {
                 if name == "closed_play.png" {
                     a.lyrics.lock().unwrap().current = None;
                 }
+                a.music_mix = if a.media.lock().is_ok_and(|m| m.playing) && !a.sleeping { 1.0 } else { 0.0 };
             }
             a.redraw();
             }
@@ -986,9 +1000,9 @@ impl App {
                 let _ = ShowWindow(self.hwnd, if hide { SW_HIDE } else { SW_SHOWNOACTIVATE });
             }
         }
-        deskfox::set_state(self.sleeping, self.hidden);
+        deskfox::set_state(self.sleeping, self.hidden, playing && !self.sleeping);
         // While the frame timer runs, it draws soon anyway.
-        if (playing || redraw) && self.frame_ms == 0 {
+        if (playing || redraw || self.music_mix > 0.005) && self.frame_ms == 0 {
             self.redraw();
         }
     }

@@ -255,6 +255,8 @@ pub struct Scene<'a> {
     pub visualizer: bool,
     /// Mascot look and whether it is napping; None hides the mascot.
     pub mascot: Option<(mascot::Look, bool)>,
+    /// Smooth music-dance & floating notes blend (0 silent .. 1 vibing).
+    pub mascot_music: f32,
     /// Hover highlight per hit area, 0..1, eased by the caller.
     pub hover: &'a [(Hit, f32)],
     /// The area just clicked and how much of its feedback is left (1 → 0).
@@ -1953,7 +1955,7 @@ impl Renderer {
             return Ok(());
         }
         self.live.set(true);
-        mascot::draw(&self.rt, &self.factory, look, cx, cy, size, a, sleeping, s.time)
+        mascot::draw_music(&self.rt, &self.factory, look, cx, cy, size, a, sleeping, s.time, s.mascot_music)
     }
 
     fn fg(&self) -> [f32; 3] {
