@@ -42,7 +42,7 @@ use windows_numerics::{Matrix3x2, Vector2};
 use crate::clipboard::{Clip, ClipData};
 use crate::image::Image;
 use crate::mascot;
-use crate::media::MediaInfo;
+use crate::media::{MediaInfo, RepeatMode};
 use crate::settings::BgStyle;
 use crate::shelf::ShelfFile;
 
@@ -118,6 +118,7 @@ pub enum Hit {
     /// The progress bar; the x position picks the seek target.
     Seek,
     Shuffle,
+    Repeat,
     /// The speaker icon: toggles mute.
     Volume,
     /// The volume bar: click, drag or scroll to set the level.
@@ -125,7 +126,8 @@ pub enum Hit {
     Lyrics,
     Settings,
     Page(usize),
-    /// The tab on the right edge that goes to the next page.
+    /// The tabs on the left and right edges that switch pages.
+    PrevPage,
     NextPage,
     ShelfFile(usize),
     /// The small buttons on a hovered shelf file: take it off the shelf, show it in its folder.
@@ -194,6 +196,10 @@ pub struct Scene<'a> {
     /// (fractional while sliding from one page to the next).
     pub page: usize,
     pub page_pos: f32,
+    pub page_order: [usize; PAGE_COUNT],
+    /// Visibility 0..1 of the left and right edge page-switch tabs (fade in on hover proximity).
+    pub prev_tab: f32,
+    pub next_tab: f32,
     pub clock: &'a str,
     pub date: &'a str,
     pub media: &'a MediaInfo,
@@ -759,7 +765,7 @@ impl Renderer {
             let drawn: Result<()> = (|| {
                 self.header(s, cx0, cw, a_big, hits)?;
                 self.pages(s, cx0, cw, ch, a_big, hits)?;
-                self.next_page_tab(s, cx0, cw, a_big, hits)?;
+                self.page_nav_tabs(s, cx0, cw, a_big, hits)?;
                 self.page_dots(s, ch, a_big, hits)?;
                 if let Some((n, bt)) = s.top_banner {
                     self.top_banner(s, n, cx0, cw, bt, a_big)?;
@@ -800,7 +806,7 @@ impl Renderer {
             let pa = a * (1.0 - d.abs()).clamp(0.0, 1.0);
             scratch.clear();
             unsafe { self.rt.SetTransform(&(translate(dx, 0.0) * self.origin.get())) };
-            let r = match p {
+            let r = match s.page_order[p] {
                 PAGE_SHELF => self.shelf_page(s, x0, w, pa, &mut scratch),
                 PAGE_FRIENDS => self.friends_page(s, x0, w, pa, &mut scratch),
                 _ => self.music_page(s, x0, w, pa, &mut scratch),
@@ -963,7 +969,8 @@ impl Renderer {
             let rr = D2D1_ROUNDED_RECT { rect: pill, radiusX: 11.0, radiusY: 11.0 };
             self.rt.FillRoundedRectangle(&rr, &self.brush(s.theme.accent, 0.28 * a)?);
         }
-        for (i, icon) in PAGE_ICONS.iter().enumerate() {
+        for i in 0..PAGE_COUNT {
+            let icon = PAGE_ICONS[s.page_order[i]];
             let x = cx + (i as f32 - 1.0) * 48.0;
             let r = D2D_RECT_F { left: x - 19.0, top: cy - 11.0, right: x + 19.0, bottom: cy + 11.0 };
             // How much the pill covers this slot.
@@ -1062,17 +1069,17 @@ impl Renderer {
             hits.push((D2D_RECT_F { top: y - 9.0, bottom: y + 9.0, ..bar }, Hit::Seek));
         }
 
-        // Controls: shuffle, prev, play/pause, next, speaker. Two columns: five
-        // even slots under the cover. Lyrics off: shuffle and the speaker at the
-        // ends of the text column, the other three grouped in its middle. While
-        // the volume slider is out, shuffle fades and the middle three move left.
+        // Controls: shuffle, prev, play/pause, next, repeat, speaker. Two columns:
+        // six even slots under the cover. Lyrics off: shuffle and speaker at the
+        // ends, the transport and repeat in between. While the volume slider is
+        // out, shuffle and repeat fade and the middle three move left.
         let cy = lerp(166.0, 160.0, k);
-        let sp = (narrow_r - l - 30.0) / 4.0;
-        let narrow = |i: f32| l + 15.0 + i * sp;
+        let sp = (narrow_r - l - 24.0) / 5.0;
+        let narrow = |i: f32| l + 12.0 + i * sp;
         let mid = (tx + wide_r) / 2.0;
-        let wide = [tx + 12.0, mid - 50.0, mid, mid + 50.0, wide_r - 14.0];
+        let wide = [tx + 12.0, mid - 48.0, mid, mid + 48.0, wide_r - 50.0, wide_r - 14.0];
         let o = if s.volume.is_some() { ease(s.vol_open) } else { 0.0 };
-        let shift = lerp(sp, 40.0, k);
+        let shift = lerp(sp, 36.0, k);
         let slot = |i: usize| lerp(narrow(i as f32), wide[i], k) - if i < 4 { shift * o } else { 0.0 };
         let enabled = if s.media.available { 1.0 } else { 0.4 };
         let at = |cx: f32, size: f32| D2D_RECT_F { left: cx - size / 2.0, top: cy - size / 2.0, right: cx + size / 2.0, bottom: cy + size / 2.0 };
@@ -1083,16 +1090,16 @@ impl Renderer {
             let x = slot(0);
             let mut scratch = Vec::new();
             let shuffle_hits = if o < 0.5 { &mut *hits } else { &mut scratch };
-            self.icon_button("\u{E8B1}", at(x, 30.0), Hit::Shuffle, shuffle_c, sa, s, shuffle_hits)?;
+            self.icon_button_with("\u{E8B1}", &self.f.icons_small, at(x, 28.0), Hit::Shuffle, shuffle_c, sa, s, shuffle_hits)?;
             if shuffle_on {
                 let d = D2D_RECT_F { left: x - 2.0, top: cy + 15.0, right: x + 2.0, bottom: cy + 19.0 };
                 unsafe { self.rt.FillEllipse(&ellipse(d), &self.brush(accent, sa)?) };
             }
         }
-        self.icon_button("\u{E892}", at(slot(1), 32.0), Hit::Prev, fg, a * enabled, s, hits)?;
+        self.icon_button("\u{E892}", at(slot(1), 30.0), Hit::Prev, fg, a * enabled, s, hits)?;
         let hot = s.hv(Hit::PlayPause);
         let pf = s.fl(Hit::PlayPause);
-        let play = at(slot(2), 40.0 + 2.0 * hot - 4.0 * ((pf - 0.7) / 0.3).clamp(0.0, 1.0));
+        let play = at(slot(2), 38.0 + 2.0 * hot - 4.0 * ((pf - 0.7) / 0.3).clamp(0.0, 1.0));
         unsafe {
             self.rt.FillEllipse(&ellipse(play), &self.brush(fg, (1.0 - 0.12 * hot) * a * enabled)?);
             if pf > 0.005 {
@@ -1103,9 +1110,23 @@ impl Renderer {
         }
         let play_icon = if s.media.playing { "\u{E769}" } else { "\u{E768}" };
         self.text(play_icon, &self.f.icons, play, s.theme.background, a)?;
-        hits.push((at(slot(2), 40.0), Hit::PlayPause));
+        hits.push((at(slot(2), 38.0), Hit::PlayPause));
         let next_x = slot(3);
-        self.icon_button("\u{E893}", at(next_x, 32.0), Hit::Next, fg, a * enabled, s, hits)?;
+        self.icon_button("\u{E893}", at(next_x, 30.0), Hit::Next, fg, a * enabled, s, hits)?;
+        let repeat = s.media.repeat.unwrap_or(RepeatMode::Off);
+        let repeat_on = repeat != RepeatMode::Off;
+        let repeat_c = if repeat_on { accent } else { self.dim() };
+        let repeat_icon = if repeat == RepeatMode::One { "\u{E8ED}" } else { "\u{E8EE}" };
+        if sa > 0.005 {
+            let x = slot(4);
+            let mut scratch = Vec::new();
+            let repeat_hits = if o < 0.5 { &mut *hits } else { &mut scratch };
+            self.icon_button_with(repeat_icon, &self.f.icons_small, at(x, 28.0), Hit::Repeat, repeat_c, sa, s, repeat_hits)?;
+            if repeat_on {
+                let d = D2D_RECT_F { left: x - 2.0, top: cy + 15.0, right: x + 2.0, bottom: cy + 19.0 };
+                unsafe { self.rt.FillEllipse(&ellipse(d), &self.brush(accent, sa)?) };
+            }
+        }
 
         // Speaker (click mutes the media app) and its slider.
         let (level, muted) = s.volume.unwrap_or((0.0, false));
@@ -1118,7 +1139,7 @@ impl Renderer {
         } else {
             "\u{E995}"
         };
-        let spk_x = slot(4);
+        let spk_x = slot(5);
         let spk = at(spk_x, 26.0);
         let va = if s.volume.is_some() { a } else { a * 0.4 };
         let spk_c = if muted { self.dim() } else { fg };
@@ -1269,23 +1290,36 @@ impl Renderer {
         result
     }
 
-    /// A small tab on the right edge that goes to the next page.
-    fn next_page_tab(&self, s: &Scene, x0: f32, w: f32, a: f32, hits: &mut Hits) -> Result<()> {
-        // Fades out as the last page slides in.
-        let a = a * (PAGE_COUNT as f32 - 1.0 - s.page_pos).clamp(0.0, 1.0);
-        if a <= 0.005 {
-            return Ok(());
+    /// Small tabs on the left and right edges to switch pages; they fade in
+    /// when the pointer approaches their edge.
+    fn page_nav_tabs(&self, s: &Scene, x0: f32, w: f32, a: f32, hits: &mut Hits) -> Result<()> {
+        let prev_a = a * s.page_pos.clamp(0.0, 1.0) * ease(s.prev_tab);
+        if prev_a > 0.005 {
+            let hot = s.hv(Hit::PrevPage);
+            let r = D2D_RECT_F { left: x0 + 4.0, top: 96.0, right: x0 + 24.0, bottom: 140.0 };
+            unsafe {
+                let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 9.0, radiusY: 9.0 };
+                self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), (0.14 + 0.14 * hot) * prev_a)?);
+            }
+            let ir = D2D_RECT_F { left: r.left - 1.5 * hot, right: r.right - 1.5 * hot, ..r };
+            self.text("\u{E76B}", &self.f.icons_small, ir, self.fg(), prev_a)?;
+            if s.page > 0 && s.prev_tab > 0.05 {
+                hits.push((r, Hit::PrevPage));
+            }
         }
-        let hot = s.hv(Hit::NextPage);
-        let r = D2D_RECT_F { left: x0 + w - 24.0, top: 96.0, right: x0 + w - 4.0, bottom: 140.0 };
-        unsafe {
-            let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 9.0, radiusY: 9.0 };
-            self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), (0.1 + 0.1 * hot) * a)?);
-        }
-        let ir = D2D_RECT_F { left: r.left + 1.5 * hot, right: r.right + 1.5 * hot, ..r };
-        self.text("\u{E76C}", &self.f.icons_small, ir, self.fg(), a)?;
-        if s.page + 1 < PAGE_COUNT {
-            hits.push((r, Hit::NextPage));
+        let next_a = a * (PAGE_COUNT as f32 - 1.0 - s.page_pos).clamp(0.0, 1.0) * ease(s.next_tab);
+        if next_a > 0.005 {
+            let hot = s.hv(Hit::NextPage);
+            let r = D2D_RECT_F { left: x0 + w - 24.0, top: 96.0, right: x0 + w - 4.0, bottom: 140.0 };
+            unsafe {
+                let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: 9.0, radiusY: 9.0 };
+                self.rt.FillRoundedRectangle(&rr, &self.brush(self.fg(), (0.14 + 0.14 * hot) * next_a)?);
+            }
+            let ir = D2D_RECT_F { left: r.left + 1.5 * hot, right: r.right + 1.5 * hot, ..r };
+            self.text("\u{E76C}", &self.f.icons_small, ir, self.fg(), next_a)?;
+            if s.page + 1 < PAGE_COUNT && s.next_tab > 0.05 {
+                hits.push((r, Hit::NextPage));
+            }
         }
         Ok(())
     }

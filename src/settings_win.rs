@@ -171,6 +171,7 @@ pub enum Key {
     ShareMusic,
     SocialName,
     SettingsZoom,
+    PageOrder,
 }
 
 const NAP_SECS: [u32; 5] = [10, 30, 60, 120, 300];
@@ -436,6 +437,8 @@ enum Item {
     Input(&'static str, Field),
     /// A person: name, a line under it, and buttons on the right.
     Person(String, String, Vec<(&'static str, Act)>),
+    /// Reorder the notch pages.
+    PageArrange,
 }
 
 /// Text boxes on the Social page.
@@ -495,6 +498,7 @@ enum Act {
     DeleteData,
     Uninstall,
     ToggleYears,
+    MovePage(usize, i8),
 }
 
 struct Fonts {
@@ -816,6 +820,9 @@ impl SettingsWindow {
                 Toggle("Hide in full screen", Key::HideFullscreen),
                 Section("OPENING"),
                 Segment("Open the notch on", Key::OpenMode, &["Hover", "Click"]),
+                Section("PAGE ARRANGE"),
+                PageArrange,
+                t("First page opens by default. Hover the notch edges or scroll to switch."),
                 Section("COLLAPSED NOTCH"),
                 Segment("Look", Key::IdleStyle, &["Clock", "Minimal"]),
                 t("Minimal is a thin bar, even while music plays."),
@@ -1685,6 +1692,49 @@ impl SettingsWindow {
                 }
                 y + 206.0
             }
+            Item::PageArrange => {
+                const META: [(&str, &str); 3] = [
+                    ("\u{E8D6}", "Music & Lyrics"),
+                    ("\u{E8B7}", "Shelf & Clipboard"),
+                    ("\u{E716}", "Friends"),
+                ];
+                let order = s.page_order();
+                let mut cy = y + 10.0;
+                let on_accent = if luminance(accent) > 0.6 { [0.08; 3] } else { [1.0; 3] };
+                for (slot, &id) in order.iter().enumerate() {
+                    let r = D2D_RECT_F { left: LEFT, top: cy, right: RIGHT, bottom: cy + 48.0 };
+                    Self::rounded(rt, r, 10.0, CARD, 1.0)?;
+                    let badge = D2D_RECT_F { left: r.left + 12.0, top: cy + 12.0, right: r.left + 36.0, bottom: cy + 36.0 };
+                    Self::rounded(rt, badge, 12.0, if slot == 0 { accent } else { FIELD }, 1.0)?;
+                    Self::text(rt, &(slot + 1).to_string(), &self.f.small_c, badge, if slot == 0 { on_accent } else { DIM })?;
+                    let (icon, name) = META[id.min(2)];
+                    Self::text(rt, icon, &self.f.icon, D2D_RECT_F { left: r.left + 46.0, top: cy, right: r.left + 72.0, bottom: cy + 48.0 }, if slot == 0 { accent } else { NAV })?;
+                    Self::text(rt, name, &self.f.label, D2D_RECT_F { left: r.left + 80.0, top: cy, right: RIGHT - 160.0, bottom: cy + 48.0 }, FG)?;
+                    if slot == 0 {
+                        Self::text(rt, "Default", &self.f.value, D2D_RECT_F { left: RIGHT - 180.0, top: cy, right: RIGHT - 94.0, bottom: cy + 48.0 }, accent)?;
+                    }
+                    for (btn_i, (glyph, dir, enabled)) in [("\u{E70E}", -1i8, slot > 0), ("\u{E70D}", 1i8, slot + 1 < 3)].into_iter().enumerate() {
+                        let bx = RIGHT - 82.0 + btn_i as f32 * 38.0;
+                        let br = D2D_RECT_F { left: bx, top: cy + 8.0, right: bx + 32.0, bottom: cy + 40.0 };
+                        let act = Act::MovePage(slot, dir);
+                        let hot = if enabled { self.hv(act) } else { 0.0 };
+                        Self::rounded(rt, br, 8.0, FIELD, if enabled { 1.0 } else { 0.45 })?;
+                        if hot > 0.005 {
+                            Self::rounded(rt, br, 8.0, FG, 0.09 * hot)?;
+                        }
+                        let fl = if enabled { self.fl(act) } else { 0.0 };
+                        if fl > 0.005 {
+                            Self::rounded(rt, br, 8.0, accent, 0.4 * fl)?;
+                        }
+                        Self::text_a(rt, glyph, &self.f.icon, br, if enabled { FG } else { DIM }, if enabled { 1.0 } else { 0.45 })?;
+                        if enabled {
+                            self.hits.push((br, act));
+                        }
+                    }
+                    cy += 56.0;
+                }
+                cy + 2.0
+            }
         })
     }
 
@@ -2354,6 +2404,17 @@ impl SettingsWindow {
             Act::CheckUpdate => crate::updater::check_now(),
             Act::InstallUpdate => crate::updater::install_now(),
             Act::ToggleYears => self.years_open = !self.years_open,
+            Act::MovePage(slot, dir) => {
+                let target = slot as i8 + dir;
+                if (0..3).contains(&target) {
+                    let target = target as usize;
+                    window::change_setting(Key::PageOrder, |s| {
+                        let mut order = s.page_order();
+                        order.swap(slot, target);
+                        s.page_order = order.to_vec();
+                    });
+                }
+            }
         }
         // Knobs, highlights and fades ease toward the new state.
         self.kick();

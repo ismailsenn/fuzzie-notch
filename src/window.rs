@@ -109,6 +109,13 @@ struct App {
     last_tick: Instant,
     tracking_leave: bool,
     hits: Vec<(D2D_RECT_F, Hit)>,
+    /// Pointer position in logical canvas coordinates while inside the notch.
+    cursor: Option<(f32, f32)>,
+    /// Visibility 0..1 of the left and right edge page-switch tabs.
+    prev_tab: f32,
+    next_tab: f32,
+    /// Last track key seen, so manual lyric scroll resets when the song changes.
+    last_track: String,
     /// The hit area under the pointer, and the eased hover highlight per area.
     hot: Option<Hit>,
     hover: Vec<(Hit, f32)>,
@@ -239,8 +246,8 @@ pub fn run(settings: Settings) -> Result<()> {
             pos: POINT::default(),
             open: false,
             anim: 0.0,
-            page: render::PAGE_MUSIC,
-            page_pos: render::PAGE_MUSIC as f32,
+            page: 0,
+            page_pos: 0.0,
             lyrics_mode: show_lyrics,
             lyric_scroll: 0.0,
             lyric_scroll_pos: 0.0,
@@ -258,6 +265,10 @@ pub fn run(settings: Settings) -> Result<()> {
             last_tick: Instant::now(),
             tracking_leave: false,
             hits: Vec::new(),
+            cursor: None,
+            prev_tab: 0.0,
+            next_tab: 0.0,
+            last_track: String::new(),
             hot: None,
             hover: Vec::new(),
             flash: None,
@@ -448,6 +459,9 @@ impl App {
         moving |= approach(&mut self.lyric_scroll_pos, self.lyric_scroll, dt, 14.0);
         // Lyrics on/off: a steady half-second glide, eased in the layout.
         moving |= glide(&mut self.wide, if self.lyrics_mode { 0.0 } else { 1.0 }, dt, 0.5);
+        let (near_prev, near_next) = self.near_edge_tabs();
+        moving |= approach(&mut self.prev_tab, if near_prev { 1.0 } else { 0.0 }, dt, 14.0);
+        moving |= approach(&mut self.next_tab, if near_next { 1.0 } else { 0.0 }, dt, 14.0);
         let hot = self.hot;
         if matches!(hot, Some(Hit::Volume | Hit::VolumeBar)) || self.vol_drag.is_some() {
             self.vol_seen = Some(now);
@@ -582,6 +596,9 @@ impl App {
             open: self.anim,
             page: self.page,
             page_pos: self.page_pos,
+            page_order: self.settings.page_order(),
+            prev_tab: self.prev_tab,
+            next_tab: self.next_tab,
             clock: &clock,
             date: &date,
             media: &media,
@@ -759,11 +776,15 @@ impl App {
         self.profile_happy = None;
         self.top_banner = None;
         self.friend_view = 0;
-        // The shelf with a file and a clipboard row under the pointer.
+        // The shelf with a file, clipboard row and both edge nav tabs visible.
         self.page = 1;
         self.page_pos = 1.0;
+        self.prev_tab = 1.0;
+        self.next_tab = 1.0;
         self.hover = vec![(Hit::ShelfFile(0), 1.0), (Hit::ShelfRemove(0), 1.0), (Hit::Clip(0), 1.0), (Hit::ClipRemove(0), 1.0)];
         save(self, "shelf_hover.png");
+        self.prev_tab = 0.0;
+        self.next_tab = 0.0;
         self.hover.clear();
         // The music page with the volume slider open.
         self.page = 0;
@@ -818,11 +839,48 @@ impl App {
         }
     }
 
+    fn page_slot(&self, id: usize) -> usize {
+        self.settings.page_order().iter().position(|&p| p == id).unwrap_or(0)
+    }
+
+    fn current_page_id(&self) -> usize {
+        self.settings.page_order()[self.page.min(PAGE_COUNT - 1)]
+    }
+
+    fn reset_lyric_scroll(&mut self) {
+        self.lyric_scroll = 0.0;
+        self.lyric_scroll_pos = 0.0;
+        self.lyric_scrolled_at = None;
+    }
+
+    /// Whether the pointer is close enough to the left/right notch edges to reveal the page arrows.
+    fn near_edge_tabs(&self) -> (bool, bool) {
+        if !self.open {
+            return (false, false);
+        }
+        let b = self.renderer.body;
+        let near = |left_edge: bool| {
+            let Some((x, y)) = self.cursor else { return false };
+            let in_y = y >= b.top + 56.0 && y <= b.top + 180.0;
+            if !in_y {
+                return false;
+            }
+            if left_edge {
+                x >= b.left - 8.0 && x <= b.left + 56.0
+            } else {
+                x >= b.right - 56.0 && x <= b.right + 8.0
+            }
+        };
+        (self.hot == Some(Hit::PrevPage) || near(true), self.hot == Some(Hit::NextPage) || near(false))
+    }
+
     fn set_open(&mut self, open: bool) {
         if self.open != open {
             self.open = open;
             if !open {
                 self.press = None;
+                self.cursor = None;
+                self.reset_lyric_scroll();
             }
             self.start_anim();
         }
@@ -832,6 +890,7 @@ impl App {
         let page = page.min(PAGE_COUNT - 1);
         if page != self.page {
             self.page = page;
+            self.reset_lyric_scroll();
             self.start_anim();
         }
     }
@@ -936,7 +995,7 @@ impl App {
             self.along_opened.clear();
             self.along_synced.clear();
         }
-        changed && self.page == crate::render::PAGE_FRIENDS
+        changed && self.current_page_id() == crate::render::PAGE_FRIENDS
     }
 
     /// Every 100 ms: HUD sources, HUD expiry, hover, and live redraws while music plays.
@@ -960,8 +1019,13 @@ impl App {
         }
         self.show_notices();
         redraw |= self.social_tick();
+        if self.lyric_scrolled_at.is_some_and(|t| t.elapsed() > LYRIC_SCROLL_HOLD) {
+            self.lyric_scrolled_at = None;
+            self.lyric_scroll = 0.0;
+            self.start_anim();
+        }
         self.poll_hover();
-        if self.anim > 0.0 && self.page == 0 {
+        if self.anim > 0.0 && self.current_page_id() == render::PAGE_MUSIC {
             let (id, name) = {
                 let m = self.media.lock().unwrap();
                 (m.app_id.clone(), m.source.clone())
@@ -1038,6 +1102,7 @@ impl App {
             self.set_open(true);
         } else if !inside && !self.tracking_leave && self.open && !self.drag_over && self.vol_drag.is_none() && !self.friend_typing {
             self.hot = None;
+            self.cursor = None;
             self.set_open(false);
         }
     }
@@ -1079,6 +1144,11 @@ impl App {
             return None;
         }
         let (x, y) = self.logical(lp);
+        let prev_near = self.near_edge_tabs();
+        self.cursor = Some((x, y));
+        if self.near_edge_tabs() != prev_near {
+            self.start_anim();
+        }
         if let Some(r) = self.vol_drag {
             self.set_volume_at(r, x);
             return None;
@@ -1106,6 +1176,7 @@ impl App {
             return;
         }
         self.hot = None;
+        self.cursor = None;
         if !self.drag_over && !self.friend_typing {
             self.set_open(false);
         }
@@ -1213,6 +1284,14 @@ impl App {
                 let on = self.media.lock().unwrap().shuffle == Some(true);
                 send(self, Cmd::Shuffle(!on));
             }
+            Hit::Repeat => {
+                let next = match self.media.lock().unwrap().repeat.unwrap_or(media::RepeatMode::Off) {
+                    media::RepeatMode::Off => media::RepeatMode::All,
+                    media::RepeatMode::All => media::RepeatMode::One,
+                    media::RepeatMode::One => media::RepeatMode::Off,
+                };
+                send(self, Cmd::Repeat(next));
+            }
             Hit::Volume => {
                 if let Some(a) = self.audio.as_mut() {
                     a.toggle_app_mute();
@@ -1224,6 +1303,7 @@ impl App {
             }
             Hit::Settings => return true,
             Hit::Page(p) => self.set_page(p),
+            Hit::PrevPage => self.set_page(self.page.saturating_sub(1)),
             Hit::NextPage => self.set_page(self.page + 1),
             Hit::ShelfFile(f) => {
                 if let Some(file) = self.shelf.files.get(f) {
@@ -1589,6 +1669,17 @@ pub fn change_setting(key: Key, f: impl FnOnce(&mut Settings)) {
                     let _ = ShowWindow(a.hwnd, SW_SHOWNOACTIVATE);
                 }
             }
+            Key::PageOrder => {
+                if a.open {
+                    let cur_id = before.page_order()[a.page.min(PAGE_COUNT - 1)];
+                    let slot = a.page_slot(cur_id);
+                    a.page = slot;
+                    a.page_pos = slot as f32;
+                } else {
+                    a.page = 0;
+                    a.page_pos = 0.0;
+                }
+            }
             _ => {}
         }
         if let Err(e) = a.settings.save() {
@@ -1772,7 +1863,8 @@ fn on_drag(event: DragEvent) {
         match event {
             DragEvent::Enter => {
                 a.drag_over = true;
-                a.set_page(render::PAGE_SHELF);
+                let slot = a.page_slot(render::PAGE_SHELF);
+                a.set_page(slot);
                 a.set_open(true);
             }
             DragEvent::Leave => a.drag_over = false,
@@ -1948,7 +2040,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             LRESULT(0)
         }
         media::WM_MEDIA_CHANGED => {
-            with_app(|a| a.redraw());
+            with_app(|a| {
+                let key = a.media.lock().unwrap().key();
+                if key != a.last_track {
+                    a.last_track = key;
+                    a.reset_lyric_scroll();
+                }
+                a.redraw();
+            });
             LRESULT(0)
         }
         tray::WM_TRAY => {

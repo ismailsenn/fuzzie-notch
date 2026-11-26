@@ -157,6 +157,8 @@ pub struct Settings {
     pub social_name: String,
     /// Size of the settings window (1 = normal), set by dragging its edges.
     pub settings_zoom: f32,
+    /// Order of the notch pages (0 = Music, 1 = Shelf, 2 = Friends).
+    pub page_order: Vec<usize>,
 }
 
 impl Default for Settings {
@@ -223,6 +225,7 @@ impl Default for Settings {
             hud_wifi: true,
             show_notifications: true,
             show_message_preview: true,
+            page_order: vec![0, 1, 2],
         }
     }
 }
@@ -287,6 +290,22 @@ impl Settings {
     pub fn ghost_ms(&self) -> u32 {
         (self.ghost_secs.clamp(1.0, 5.0) * 1000.0) as u32
     }
+
+    /// Validated notch page order: always a permutation of 0..3.
+    pub fn page_order(&self) -> [usize; 3] {
+        let mut out = Vec::with_capacity(3);
+        for &p in &self.page_order {
+            if p < 3 && !out.contains(&p) {
+                out.push(p);
+            }
+        }
+        for p in 0..3 {
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        }
+        [out[0], out[1], out[2]]
+    }
 }
 
 /// Parses `#RRGGBB` into 0..1 floats; falls back to the given colour.
@@ -318,5 +337,17 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"clock_24h": false, "unknown": 1}"#).unwrap();
         assert!(!s.clock_24h);
         assert_eq!(s.open_mode, OpenMode::Hover);
+        assert_eq!(s.page_order(), [0, 1, 2]);
+    }
+
+    #[test]
+    fn page_order_normalizes() {
+        let mut s = Settings::default();
+        s.page_order = vec![2, 0, 1];
+        assert_eq!(s.page_order(), [2, 0, 1]);
+        s.page_order = vec![1, 1, 9];
+        assert_eq!(s.page_order(), [1, 0, 2]);
+        s.page_order = vec![];
+        assert_eq!(s.page_order(), [0, 1, 2]);
     }
 }

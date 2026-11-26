@@ -14,6 +14,7 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionManager as Manager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as Status,
 };
+use windows::Media::MediaPlaybackAutoRepeatMode;
 use windows::Storage::Streams::IRandomAccessStream;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
@@ -28,6 +29,14 @@ pub const WM_MEDIA_CHANGED: u32 = WM_APP + 1;
 /// Album art is decoded to a square of this many pixels.
 pub const ART_SIZE: u32 = 96;
 
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RepeatMode {
+    #[default]
+    Off,
+    All,
+    One,
+}
 
 #[derive(Clone, Default)]
 pub struct MediaInfo {
@@ -45,6 +54,8 @@ pub struct MediaInfo {
     pub art: Option<Arc<Image>>,
     /// None when the app does not report shuffle.
     pub shuffle: Option<bool>,
+    /// None when the app does not report repeat.
+    pub repeat: Option<RepeatMode>,
 }
 
 /// A drawn cover for the demo song: a striped sun setting over a road.
@@ -97,6 +108,7 @@ impl MediaInfo {
             duration_ms,
             position_ms: 49_000,
             shuffle: Some(true),
+            repeat: Some(RepeatMode::Off),
             art: Some(Arc::new(demo_art())),
             ..Default::default()
         }
@@ -127,6 +139,7 @@ impl MediaInfo {
             || self.source != o.source
             || self.duration_ms != o.duration_ms
             || self.shuffle != o.shuffle
+            || self.repeat != o.repeat
             || self.art.as_ref().map(|a| a.id) != o.art.as_ref().map(|a| a.id)
             || self.position_ms().abs_diff(o.position_ms()) > 1500
     }
@@ -139,6 +152,7 @@ pub enum Cmd {
     Next,
     Seek(u64),
     Shuffle(bool),
+    Repeat(RepeatMode),
 }
 
 /// Starts the media thread. It polls twice a second and runs commands as they arrive.
@@ -219,6 +233,11 @@ fn read(session: &Session) -> Result<MediaInfo> {
     let playback = session.GetPlaybackInfo()?;
     let status = playback.PlaybackStatus()?;
     let shuffle = playback.IsShuffleActive().and_then(|r| r.Value()).ok();
+    let repeat = playback.AutoRepeatMode().and_then(|r| r.Value()).ok().map(|m| match m {
+        MediaPlaybackAutoRepeatMode::List => RepeatMode::All,
+        MediaPlaybackAutoRepeatMode::Track => RepeatMode::One,
+        _ => RepeatMode::Off,
+    });
     let playing = status == Status::Playing;
     let timeline = session.GetTimelineProperties()?;
     let ms = |ticks: i64| (ticks.max(0) / 10_000) as u64;
@@ -249,6 +268,7 @@ fn read(session: &Session) -> Result<MediaInfo> {
         sampled: Some(Instant::now()),
         art: None,
         shuffle,
+        repeat,
     })
 }
 
@@ -286,6 +306,14 @@ fn run(m: &Manager, cmd: Cmd) -> Result<()> {
         Cmd::Next => session.TrySkipNextAsync()?,
         Cmd::Seek(ms) => session.TryChangePlaybackPositionAsync(ms as i64 * 10_000)?,
         Cmd::Shuffle(on) => session.TryChangeShuffleActiveAsync(on)?,
+        Cmd::Repeat(mode) => {
+            let m = match mode {
+                RepeatMode::Off => MediaPlaybackAutoRepeatMode::None,
+                RepeatMode::All => MediaPlaybackAutoRepeatMode::List,
+                RepeatMode::One => MediaPlaybackAutoRepeatMode::Track,
+            };
+            session.TryChangeAutoRepeatModeAsync(m)?
+        }
     };
     op.join()?;
     Ok(())
