@@ -60,6 +60,8 @@ const LYRIC_SCROLL_HOLD: Duration = Duration::from_secs(4);
 const TIMER_SNAPSHOT: usize = 5;
 /// Ends the see-through spell of a right-click.
 const TIMER_GHOST: usize = 6;
+/// Checks and restores topmost z-order shortly after another window comes forward.
+const TIMER_RAISE: usize = 7;
 /// Opacity while see-through.
 pub const GHOST_ALPHA: u8 = 105;
 const HUD_TIME: Duration = Duration::from_millis(1600);
@@ -141,6 +143,8 @@ struct App {
     music_mix: f32,
     /// Hidden because a full-screen app is in front.
     hidden: bool,
+    /// When the notch last re-asserted its topmost z-order (prevents rapid thrashing).
+    last_raised: Option<Instant>,
     /// Interval of the frame clock in ms (0 = off).
     frame_ms: u32,
     clock: FrameClock,
@@ -283,6 +287,7 @@ pub fn run(settings: Settings) -> Result<()> {
             sleeping: false,
             music_mix: 0.0,
             hidden: false,
+            last_raised: None,
             frame_ms: 0,
             clock: FrameClock::new(hwnd, WM_FRAME),
             last_poll: Instant::now(),
@@ -318,6 +323,10 @@ pub fn run(settings: Settings) -> Result<()> {
             }
         });
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        with_app(|a| a.ensure_topmost(true));
+        if !std::env::args().any(|a| a == "--snapshot") {
+            install_z_hooks();
+        }
         if std::env::args().any(|a| a == "--snapshot") {
             crate::social::demo();
             SetTimer(Some(hwnd), TIMER_SNAPSHOT, 5000, None);
@@ -1056,28 +1065,7 @@ impl App {
             self.sleeping = sleeping;
             redraw = true;
         }
-        let hide = self.settings.hide_in_fullscreen && fullscreen_app_in_front(self.hwnd);
-        if hide != self.hidden {
-            self.hidden = hide;
-            redraw = true; // restarts or stops the mascot's frame timer
-            unsafe {
-                let _ = ShowWindow(self.hwnd, if hide { SW_HIDE } else { SW_SHOWNOACTIVATE });
-                if !hide {
-                    use windows::Win32::UI::WindowsAndMessaging::{
-                        SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-                    };
-                    let _ = SetWindowPos(
-                        self.hwnd,
-                        Some(HWND_TOPMOST),
-                        0,
-                        0,
-                        0,
-                        0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-                    );
-                }
-            }
-        }
+        redraw |= self.update_hidden();
         deskfox::set_state(self.sleeping, self.hidden, self.settings.desk_dance && playing && !self.sleeping);
         // While the frame timer runs, it draws soon anyway.
         if (playing || redraw || self.music_mix > 0.005) && self.frame_ms == 0 {
@@ -1513,9 +1501,84 @@ impl App {
         }
         self.ghost = false;
         set_click_through(self.hwnd, false);
+        self.ensure_topmost(false);
         self.renderer.set_ghost(255);
         self.renderer.full_refresh();
         self.redraw();
+    }
+
+    /// Visible notch body in screen coordinates (used for z-order overlap checks).
+    fn body_screen_rect(&self) -> windows::Win32::Foundation::RECT {
+        let s = self.renderer.scale();
+        let b = self.renderer.body;
+        if b.right > b.left && b.bottom > b.top {
+            windows::Win32::Foundation::RECT {
+                left: self.pos.x + (b.left * s).floor() as i32,
+                top: self.pos.y + (b.top * s).floor() as i32,
+                right: self.pos.x + (b.right * s).ceil() as i32,
+                bottom: self.pos.y + (b.bottom * s).ceil() as i32,
+            }
+        } else {
+            let mut r = windows::Win32::Foundation::RECT::default();
+            unsafe {
+                let _ = GetWindowRect(self.hwnd, &mut r);
+            }
+            r
+        }
+    }
+
+    /// Hides or reveals the notch for full-screen apps. Returns true if visibility changed.
+    fn update_hidden(&mut self) -> bool {
+        let hide = self.settings.hide_in_fullscreen && fullscreen_app_in_front(self.hwnd);
+        if hide == self.hidden {
+            return false;
+        }
+        self.hidden = hide;
+        unsafe {
+            let _ = ShowWindow(self.hwnd, if hide { SW_HIDE } else { SW_SHOWNOACTIVATE });
+        }
+        if !hide {
+            self.ensure_topmost(true);
+        }
+        true
+    }
+
+    /// Restores the notch to the top of the topmost band if Windows demoted it or
+    /// another non-transient window slipped in front of it, without stealing focus.
+    fn ensure_topmost(&mut self, force: bool) {
+        if self.hidden {
+            return;
+        }
+        unsafe {
+            if !windows::Win32::UI::WindowsAndMessaging::IsWindowVisible(self.hwnd).as_bool() {
+                return;
+            }
+        }
+        if force {
+            raise_topmost(self.hwnd, false);
+            self.last_raised = Some(Instant::now());
+            return;
+        }
+        let body = self.body_screen_rect();
+        match z_order_issue(self.hwnd, body) {
+            ZIssue::None => {}
+            ZIssue::LostTopmost => {
+                raise_topmost(self.hwnd, false);
+                self.last_raised = Some(Instant::now());
+            }
+            ZIssue::BehindNonTopmost => {
+                if self.last_raised.is_none_or(|t| t.elapsed() >= Duration::from_millis(250)) {
+                    raise_topmost(self.hwnd, true);
+                    self.last_raised = Some(Instant::now());
+                }
+            }
+            ZIssue::BehindTopmost => {
+                if self.last_raised.is_none_or(|t| t.elapsed() >= Duration::from_millis(400)) {
+                    raise_topmost(self.hwnd, false);
+                    self.last_raised = Some(Instant::now());
+                }
+            }
+        }
     }
 
     fn on_wheel(&mut self, wp: WPARAM, lp: LPARAM) {
@@ -1619,11 +1682,23 @@ impl App {
 
 /// Lets clicks fall through `hwnd` to whatever is behind it (`on`), or catches them again.
 pub fn set_click_through(hwnd: HWND, on: bool) {
-    use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TRANSPARENT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_TRANSPARENT,
+    };
     unsafe {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let t = WS_EX_TRANSPARENT.0 as isize;
         let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, if on { ex | t } else { ex & !t });
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
     }
 }
 
@@ -1663,11 +1738,8 @@ pub fn change_setting(key: Key, f: impl FnOnce(&mut Settings)) {
                 a.clips.trim(a.settings.clipboard_max);
                 a.save_store();
             }
-            Key::HideFullscreen if !a.settings.hide_in_fullscreen && a.hidden => {
-                a.hidden = false;
-                unsafe {
-                    let _ = ShowWindow(a.hwnd, SW_SHOWNOACTIVATE);
-                }
+            Key::HideFullscreen => {
+                a.update_hidden();
             }
             Key::PageOrder => {
                 if a.open {
@@ -1702,8 +1774,162 @@ pub fn quit() {
     }
 }
 
-/// The notch window, for [`quit`] (callable from anywhere on the UI thread).
+/// The notch window, for [`quit`] and WinEvent z-order hooks (callable from anywhere on the UI thread).
 static NOTCH: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+static FG_HOOK: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+static MIN_HOOK: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ZIssue {
+    None,
+    /// `WS_EX_TOPMOST` bit itself was cleared.
+    LostTopmost,
+    /// Still flagged `WS_EX_TOPMOST`, yet a visible non-topmost window sits above it
+    /// (Windows full-screen / DWM demotion bug).
+    BehindNonTopmost,
+    /// Another non-transient topmost window overlaps the notch body above it.
+    BehindTopmost,
+}
+
+fn rects_intersect(a: &windows::Win32::Foundation::RECT, b: &windows::Win32::Foundation::RECT) -> bool {
+    a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+}
+
+/// Shell popups, menus, tooltips, IME and Fuzzie's own windows that may legitimately sit above the notch.
+fn is_transient_overlay_class(class: &str) -> bool {
+    matches!(
+        class,
+        "FuzzieDesk"
+            | "FuzzieSettings"
+            | "#32768"
+            | "tooltips_class32"
+            | "ComboLBox"
+            | "IME"
+            | "MSCTFIME UI"
+            | "SysDragImage"
+            | "Windows.UI.Core.CoreWindow"
+            | "XamlExplorerHostIslandWindow"
+            | "MultitaskingViewFrame"
+            | "TaskListThumbnailWnd"
+            | "NotifyIconOverflowWindow"
+            | "TopLevelWindowForOverflowXamlIsland"
+    )
+}
+
+fn z_order_issue(hwnd: HWND, body: windows::Win32::Foundation::RECT) -> ZIssue {
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindow, GetWindowLongPtrW, IsIconic, IsWindowVisible, GWL_EXSTYLE, GW_HWNDPREV,
+    };
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        if (ex & WS_EX_TOPMOST.0) == 0 {
+            return ZIssue::LostTopmost;
+        }
+        let mut cur = GetWindow(hwnd, GW_HWNDPREV);
+        let mut behind_topmost = false;
+        let mut buf = [0u16; 64];
+        for _ in 0..256 {
+            let Ok(prev) = cur else { break };
+            if prev.0.is_null() {
+                break;
+            }
+            cur = GetWindow(prev, GW_HWNDPREV);
+            if !IsWindowVisible(prev).as_bool() || IsIconic(prev).as_bool() {
+                continue;
+            }
+            let mut cloaked: u32 = 0;
+            if DwmGetWindowAttribute(prev, DWMWA_CLOAKED, &mut cloaked as *mut _ as *mut _, 4).is_ok() && cloaked != 0 {
+                continue;
+            }
+            let mut r = windows::Win32::Foundation::RECT::default();
+            if GetWindowRect(prev, &mut r).is_err() || r.right <= r.left || r.bottom <= r.top {
+                continue;
+            }
+            let prev_ex = GetWindowLongPtrW(prev, GWL_EXSTYLE) as u32;
+            let prev_topmost = (prev_ex & WS_EX_TOPMOST.0) != 0;
+            if !prev_topmost {
+                let n = GetClassNameW(prev, &mut buf) as usize;
+                let class = String::from_utf16_lossy(&buf[..n]);
+                if !matches!(class.as_str(), "Progman" | "WorkerW") {
+                    return ZIssue::BehindNonTopmost;
+                }
+            } else if !behind_topmost && rects_intersect(&body, &r) {
+                let n = GetClassNameW(prev, &mut buf) as usize;
+                let class = String::from_utf16_lossy(&buf[..n]);
+                if !is_transient_overlay_class(&class) {
+                    behind_topmost = true;
+                }
+            }
+        }
+        if behind_topmost { ZIssue::BehindTopmost } else { ZIssue::None }
+    }
+}
+
+fn raise_topmost(hwnd: HWND, reset_band: bool) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+        SWP_NOSIZE,
+    };
+    let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+    unsafe {
+        // When Windows demotes a topmost window behind normal windows while keeping
+        // WS_EX_TOPMOST set, a single HWND_TOPMOST can be ignored; toggling out and
+        // back in forces DWM to re-insert it at the top of the topmost band.
+        if reset_band {
+            let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags);
+        }
+        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
+    }
+}
+
+unsafe extern "system" fn on_win_event(
+    _: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
+    _: u32,
+    _: HWND,
+    _: i32,
+    _: i32,
+    _: u32,
+    _: u32,
+) {
+    let raw = NOTCH.load(std::sync::atomic::Ordering::Relaxed);
+    if raw != 0 {
+        unsafe { SetTimer(Some(HWND(raw as *mut core::ffi::c_void)), TIMER_RAISE, 60, None) };
+    }
+}
+
+fn install_z_hooks() {
+    use std::sync::atomic::Ordering;
+    use windows::Win32::UI::Accessibility::SetWinEventHook;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND, WINEVENT_OUTOFCONTEXT,
+        WINEVENT_SKIPOWNPROCESS,
+    };
+    let flags = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
+    unsafe {
+        if FG_HOOK.load(Ordering::Relaxed) == 0 {
+            let h = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, None, Some(on_win_event), 0, 0, flags);
+            FG_HOOK.store(h.0 as isize, Ordering::Relaxed);
+        }
+        if MIN_HOOK.load(Ordering::Relaxed) == 0 {
+            let h = SetWinEventHook(EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZEEND, None, Some(on_win_event), 0, 0, flags);
+            MIN_HOOK.store(h.0 as isize, Ordering::Relaxed);
+        }
+    }
+}
+
+fn remove_z_hooks() {
+    use std::sync::atomic::Ordering;
+    use windows::Win32::UI::Accessibility::{UnhookWinEvent, HWINEVENTHOOK};
+    unsafe {
+        for slot in [&FG_HOOK, &MIN_HOOK] {
+            let raw = slot.swap(0, Ordering::Relaxed);
+            if raw != 0 {
+                let _ = UnhookWinEvent(HWINEVENTHOOK(raw as *mut core::ffi::c_void));
+            }
+        }
+    }
+}
 
 /// Opens the friend's song in Spotify (the app if installed, else the web).
 fn open_in_spotify(artist: &str, title: &str) {
@@ -1821,7 +2047,7 @@ fn fullscreen_app_in_front(own: HWND) -> bool {
                 | "Windows.UI.Core.CoreWindow"
                 | "XamlExplorerHostIslandWindow"
                 | "FuzzieSettings"
-                | "FuzzieDeskFox"
+                | "FuzzieDesk"
         ) {
             return false;
         }
@@ -1963,6 +2189,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             with_app(|a| match wp.0 {
                 TIMER_CLOCK => {
                     stats::touch_day();
+                    a.ensure_topmost(false);
                     if a.clips.expire() {
                         a.save_store();
                         a.redraw();
@@ -1974,6 +2201,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 TIMER_POLL => a.on_poll(),
                 TIMER_SNAPSHOT => a.snapshot(),
                 TIMER_GHOST => a.end_ghost(),
+                TIMER_RAISE => {
+                    let _ = windows::Win32::UI::WindowsAndMessaging::KillTimer(Some(a.hwnd), TIMER_RAISE);
+                    if a.update_hidden() {
+                        a.redraw();
+                    } else {
+                        a.ensure_topmost(false);
+                    }
+                }
                 _ => {}
             });
             LRESULT(0)
@@ -2058,11 +2293,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             LRESULT(0)
         }
         WM_DPICHANGED => {
-            with_app(|a| a.on_dpi_changed());
+            with_app(|a| {
+                a.on_dpi_changed();
+                a.ensure_topmost(true);
+            });
             LRESULT(0)
         }
         WM_DISPLAYCHANGE => {
-            with_app(|a| a.redraw());
+            with_app(|a| {
+                a.redraw();
+                a.ensure_topmost(true);
+            });
             deskfox::keep_on_screen();
             LRESULT(0)
         }
@@ -2076,6 +2317,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             LRESULT(0)
         }
         WM_DESTROY => {
+            remove_z_hooks();
             if !crate::wipe::pending() {
                 with_app(|a| a.save_store());
                 stats::save();
@@ -2089,10 +2331,74 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             // Explorer restarted or just finished starting at logon: re-add
             // the tray icon and re-anchor the notch / desktop fox to the taskbar.
             let _ = tray::add(hwnd);
-            with_app(|a| a.redraw());
+            with_app(|a| {
+                a.redraw();
+                a.ensure_topmost(true);
+            });
             deskfox::keep_on_screen();
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wp, lp),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::Foundation::RECT;
+
+    #[test]
+    fn rect_overlap() {
+        let a = RECT { left: 100, top: 0, right: 300, bottom: 32 };
+        assert!(rects_intersect(&a, &RECT { left: 0, top: 0, right: 1920, bottom: 1080 }));
+        assert!(rects_intersect(&a, &RECT { left: 299, top: 31, right: 400, bottom: 50 }));
+        assert!(!rects_intersect(&a, &RECT { left: 300, top: 0, right: 500, bottom: 32 }));
+        assert!(!rects_intersect(&a, &RECT { left: 0, top: 1040, right: 1920, bottom: 1080 }));
+    }
+
+    #[test]
+    fn transient_overlay_filter() {
+        assert!(is_transient_overlay_class("#32768"));
+        assert!(is_transient_overlay_class("tooltips_class32"));
+        assert!(is_transient_overlay_class("FuzzieDesk"));
+        assert!(is_transient_overlay_class("FuzzieSettings"));
+        assert!(!is_transient_overlay_class("Chrome_WidgetWin_1"));
+        assert!(!is_transient_overlay_class("Shell_TrayWnd"));
+    }
+
+    #[test]
+    fn raise_restores_demoted_topmost_window() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_NOTOPMOST, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOSIZE,
+        };
+        unsafe {
+            let hinst = GetModuleHandleW(None).unwrap();
+            let class = w!("STATIC");
+            let hwnd = CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+                class,
+                w!(""),
+                WS_POPUP,
+                -2000,
+                -2000,
+                10,
+                10,
+                None,
+                None,
+                Some(hinst.into()),
+                None,
+            )
+            .unwrap();
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            let body = RECT { left: -2000, top: -2000, right: -1990, bottom: -1990 };
+            assert_eq!(z_order_issue(hwnd, body), ZIssue::LostTopmost);
+            raise_topmost(hwnd, false);
+            let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+            assert_ne!(ex & WS_EX_TOPMOST.0, 0);
+            assert_eq!(z_order_issue(hwnd, body), ZIssue::None);
+            let _ = DestroyWindow(hwnd);
+        }
     }
 }

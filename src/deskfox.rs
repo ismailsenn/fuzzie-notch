@@ -265,6 +265,7 @@ pub fn set_state(sleeping: bool, hidden: bool, music: bool) {
             }
             if !hidden {
                 d.draw();
+                raise(d.hwnd);
             }
             d.update_anim();
         }
