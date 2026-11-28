@@ -654,10 +654,27 @@ impl App {
         match self.renderer.draw(&scene) {
             Ok(hits) => self.hits = hits,
             Err(e) => {
-                // Rebuild the target so one bad frame cannot freeze the notch.
-                eprintln!("draw failed: {e}; rebuilding the renderer");
-                if let Ok(r) = Renderer::new(dpi_scale(self.hwnd, &self.settings)) {
-                    self.renderer = r;
+                // Discard the broken shared Direct2D target, rebuild and retry once.
+                // Never present an undrawn blank DIB or the notch would vanish.
+                eprintln!("draw failed: {e}; resetting shared Direct2D target");
+                render::reset_shared_target();
+                match Renderer::new(dpi_scale(self.hwnd, &self.settings)) {
+                    Ok(mut r) => match r.draw(&scene) {
+                        Ok(hits) => {
+                            self.renderer = r;
+                            self.hits = hits;
+                        }
+                        Err(e2) => {
+                            eprintln!("draw retry failed: {e2}");
+                            self.set_frame(0);
+                            return;
+                        }
+                    },
+                    Err(e2) => {
+                        eprintln!("renderer rebuild failed: {e2}");
+                        self.set_frame(0);
+                        return;
+                    }
                 }
             }
         }
@@ -1846,15 +1863,22 @@ fn z_order_issue(hwnd: HWND, body: windows::Win32::Foundation::RECT) -> ZIssue {
             if GetWindowRect(prev, &mut r).is_err() || r.right <= r.left || r.bottom <= r.top {
                 continue;
             }
+            if !rects_intersect(&body, &r) {
+                continue;
+            }
+            windows::Win32::Foundation::SetLastError(windows::Win32::Foundation::ERROR_SUCCESS);
             let prev_ex = GetWindowLongPtrW(prev, GWL_EXSTYLE) as u32;
+            if prev_ex == 0 && windows::Win32::Foundation::GetLastError() != windows::Win32::Foundation::ERROR_SUCCESS {
+                continue;
+            }
             let prev_topmost = (prev_ex & WS_EX_TOPMOST.0) != 0;
             if !prev_topmost {
                 let n = GetClassNameW(prev, &mut buf) as usize;
                 let class = String::from_utf16_lossy(&buf[..n]);
-                if !matches!(class.as_str(), "Progman" | "WorkerW") {
+                if !matches!(class.as_str(), "Progman" | "WorkerW") && !is_transient_overlay_class(&class) {
                     return ZIssue::BehindNonTopmost;
                 }
-            } else if !behind_topmost && rects_intersect(&body, &r) {
+            } else if !behind_topmost {
                 let n = GetClassNameW(prev, &mut buf) as usize;
                 let class = String::from_utf16_lossy(&buf[..n]);
                 if !is_transient_overlay_class(&class) {

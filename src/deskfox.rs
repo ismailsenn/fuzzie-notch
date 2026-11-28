@@ -108,6 +108,7 @@ struct Desk {
     hwnd: HWND,
     factory: ID2D1Factory,
     rt: ID2D1DCRenderTarget,
+    rt_gen: u64,
     dc: HDC,
     bitmap: HBITMAP,
     bits: *mut u8,
@@ -416,6 +417,7 @@ fn open(s: &Settings) -> Result<()> {
             hwnd,
             factory,
             rt,
+            rt_gen: crate::render::shared_gen(),
             dc,
             bitmap,
             bits: bits as *mut u8,
@@ -770,6 +772,21 @@ impl Desk {
         }
     }
 
+    fn sync_target(&mut self) -> bool {
+        let gen = crate::render::shared_gen();
+        if self.rt_gen == gen {
+            return true;
+        }
+        if let Ok((factory, rt)) = crate::render::shared_target() {
+            self.factory = factory;
+            self.rt = rt;
+            self.rt_gen = gen;
+            true
+        } else {
+            false
+        }
+    }
+
     fn draw(&mut self) {
         if self.hidden {
             return;
@@ -777,41 +794,55 @@ impl Desk {
         let paws = self.forced.unwrap_or(self.down.map(|d| if d { 1.0 } else { 0.0 }));
         let blink = if self.eyes_shut { 1.0 } else { 0.0 };
         let (cx, cy) = (W_K * self.size / 2.0, FOX_Y_K * self.size);
-        unsafe {
-            crate::render::lend_target();
-            self.rt.SetDpi(96.0 * self.scale, 96.0 * self.scale);
-            if self.rt.BindDC(self.dc, &RECT { left: 0, top: 0, right: self.width, bottom: self.height }).is_err() {
+        let (acc, acc2) = if self.acc_on { (self.acc, self.acc2) } else { (0, 0) };
+        let look = mascot::Look::new(self.species, self.skin, acc, acc2);
+        let st = mascot::BongoState {
+            paws,
+            blink,
+            live: self.anim_on,
+            zt: self.started.elapsed().as_secs_f32(),
+            glow: self.glow_on,
+            squash: self.squash,
+            head_bob: self.head_bob,
+            ear_bounce: self.ear_bounce,
+            hype: self.hype,
+            sleep_mix: self.sleep_mix,
+            yarn_mix: self.yarn_mix,
+            yarn_ball: [self.yarn_x, self.yarn_y, self.yarn_rot, self.yarn_squash],
+            music_mix: self.music_mix,
+        };
+        for attempt in 0..2 {
+            if !self.sync_target() {
                 return;
             }
-            self.rt.BeginDraw();
-            self.rt.SetTransform(&Matrix3x2::identity());
-            self.rt.Clear(Some(&D2D1_COLOR_F::default()));
-            let (acc, acc2) = if self.acc_on { (self.acc, self.acc2) } else { (0, 0) };
-            let look = mascot::Look::new(self.species, self.skin, acc, acc2);
-            let st = mascot::BongoState {
-                paws,
-                blink,
-                live: self.anim_on,
-                zt: self.started.elapsed().as_secs_f32(),
-                glow: self.glow_on,
-                squash: self.squash,
-                head_bob: self.head_bob,
-                ear_bounce: self.ear_bounce,
-                hype: self.hype,
-                sleep_mix: self.sleep_mix,
-                yarn_mix: self.yarn_mix,
-                yarn_ball: [self.yarn_x, self.yarn_y, self.yarn_rot, self.yarn_squash],
-                music_mix: self.music_mix,
+            let ok = unsafe {
+                crate::render::lend_target();
+                self.rt.SetDpi(96.0 * self.scale, 96.0 * self.scale);
+                if self.rt.BindDC(self.dc, &RECT { left: 0, top: 0, right: self.width, bottom: self.height }).is_err() {
+                    false
+                } else {
+                    self.rt.BeginDraw();
+                    self.rt.SetTransform(&Matrix3x2::identity());
+                    self.rt.Clear(Some(&D2D1_COLOR_F::default()));
+                    let drawn = mascot::draw_bongo(&self.rt, &self.factory, look, cx, cy, self.size, self.sleeping, st);
+                    let ended = self.rt.EndDraw(None, None);
+                    drawn.is_ok() && ended.is_ok()
+                }
             };
-            let _ = mascot::draw_bongo(&self.rt, &self.factory, look, cx, cy, self.size, self.sleeping, st);
-            if self.rt.EndDraw(None, None).is_err() {
+            if ok {
+                unsafe {
+                    let alpha = if self.ghost { window::GHOST_ALPHA } else { 255 };
+                    let blend = BLENDFUNCTION { BlendOp: AC_SRC_OVER as u8, BlendFlags: 0, SourceConstantAlpha: alpha, AlphaFormat: AC_SRC_ALPHA as u8 };
+                    let size = SIZE { cx: self.width, cy: self.height };
+                    let zero = POINT::default();
+                    let _ = UpdateLayeredWindow(self.hwnd, None, Some(&self.pos), Some(&size), Some(self.dc), Some(&zero), COLORREF(0), Some(&blend), ULW_ALPHA);
+                }
                 return;
             }
-            let alpha = if self.ghost { window::GHOST_ALPHA } else { 255 };
-            let blend = BLENDFUNCTION { BlendOp: AC_SRC_OVER as u8, BlendFlags: 0, SourceConstantAlpha: alpha, AlphaFormat: AC_SRC_ALPHA as u8 };
-            let size = SIZE { cx: self.width, cy: self.height };
-            let zero = POINT::default();
-            let _ = UpdateLayeredWindow(self.hwnd, None, Some(&self.pos), Some(&size), Some(self.dc), Some(&zero), COLORREF(0), Some(&blend), ULW_ALPHA);
+            if attempt == 0 {
+                // Recover from D2DERR_RECREATE_TARGET / D2DERR_WRONG_STATE so the fox never freezes.
+                crate::render::reset_shared_target();
+            }
         }
     }
 

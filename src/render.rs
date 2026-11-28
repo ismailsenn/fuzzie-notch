@@ -320,6 +320,7 @@ type Hits = Vec<(D2D_RECT_F, Hit)>;
 pub struct Renderer {
     factory: ID2D1Factory,
     rt: ID2D1DCRenderTarget,
+    rt_gen: u64,
     dw: IDWriteFactory,
     dc: HDC,
     bitmap: HBITMAP,
@@ -375,8 +376,25 @@ thread_local! {
     /// desktop fox). Each software target brings its own rasteriser with a large
     /// working set, so sharing one saves tens of MB.
     static SHARED: RefCell<Option<(ID2D1Factory, ID2D1DCRenderTarget)>> = const { RefCell::new(None) };
+    /// Incremented whenever the shared target is recreated after a Direct2D error.
+    static SHARED_GEN: Cell<u64> = const { Cell::new(0) };
     /// Someone else bound the shared target since the notch last did.
     static LENT: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Current generation of [`shared_target`]; changes after [`reset_shared_target`].
+pub fn shared_gen() -> u64 {
+    SHARED_GEN.with(|g| g.get())
+}
+
+/// Discards the shared Direct2D target and its cached mascot brushes so the next
+/// draw creates a fresh target (recovers from `D2DERR_RECREATE_TARGET` / `D2DERR_WRONG_STATE`).
+pub fn reset_shared_target() {
+    if let Some((factory, rt)) = SHARED.with(|s| s.borrow_mut().take()) {
+        mascot::release(&rt, &factory);
+    }
+    SHARED_GEN.with(|g| g.set(g.get().wrapping_add(1)));
+    LENT.with(|l| l.set(true));
 }
 
 /// The shared factory and DC render target (made on first use).
@@ -476,6 +494,7 @@ impl Renderer {
             Ok(Self {
                 factory,
                 rt,
+                rt_gen: shared_gen(),
                 dw,
                 dc,
                 bitmap,
@@ -508,8 +527,30 @@ impl Renderer {
         }
     }
 
+    /// Rebinds brushes and target handles if another window reset the shared Direct2D target.
+    fn sync_target(&mut self) -> Result<()> {
+        let gen = shared_gen();
+        if self.rt_gen == gen {
+            return Ok(());
+        }
+        let (factory, rt) = shared_target()?;
+        let solid = unsafe { rt.CreateSolidColorBrush(&rgba(WHITE, 1.0), None)? };
+        self.factory = factory;
+        self.rt = rt;
+        self.rt_gen = gen;
+        self.solid = solid;
+        self.bg_grad.borrow_mut().take();
+        self.bitmaps.borrow_mut().clear();
+        self.bound.set(None);
+        self.drawn_body.set(None);
+        self.shown.set(false);
+        lend_target();
+        Ok(())
+    }
+
     /// Draws one frame. Returns the clickable areas in logical coordinates.
     pub fn draw(&mut self, s: &Scene) -> Result<Hits> {
+        self.sync_target()?;
         let mut hits = Vec::new();
         for v in self.bitmaps.borrow_mut().values_mut() {
             v.2 = false;
@@ -2259,7 +2300,11 @@ use windows::core::Interface;
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        mascot::release(&self.rt, &self.factory);
+        // Only drop mascot caches if this target is no longer the live shared one.
+        let still_shared = SHARED.with(|s| s.borrow().as_ref().is_some_and(|(_, r)| r.as_raw() == self.rt.as_raw()));
+        if !still_shared {
+            mascot::release(&self.rt, &self.factory);
+        }
         unsafe {
             SelectObject(self.dc, self.old);
             let _ = DeleteObject(self.bitmap.into());
@@ -2392,5 +2437,28 @@ mod tests {
     fn times() {
         assert_eq!(fmt_time(83_000), "1:23");
         assert_eq!(fmt_time(3_723_000), "1:02:03");
+    }
+
+    #[test]
+    fn shared_target_reset_recreates_target() {
+        let g0 = shared_gen();
+        let (_, rt1) = shared_target().unwrap();
+        let raw1 = rt1.as_raw() as usize;
+        drop(rt1);
+        reset_shared_target();
+        assert_ne!(shared_gen(), g0);
+        let (_, rt2) = shared_target().unwrap();
+        let raw2 = rt2.as_raw() as usize;
+        drop(rt2);
+        // After reset, a brand-new render target is created (keep rt1 alive in a second check to guarantee distinct addresses).
+        let (_, keep) = shared_target().unwrap();
+        let keep_raw = keep.as_raw() as usize;
+        reset_shared_target();
+        let (_, fresh) = shared_target().unwrap();
+        assert_ne!(fresh.as_raw() as usize, keep_raw);
+        let _ = (raw1, raw2);
+        drop(fresh);
+        drop(keep);
+        reset_shared_target();
     }
 }
